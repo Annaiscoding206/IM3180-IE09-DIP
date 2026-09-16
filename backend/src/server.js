@@ -5,6 +5,7 @@ const cors = require("cors");
 const pool = require("./config/db");
 const courseRoutes = require("./routes/courseRoutes");
 const studentRoutes = require("./routes/studentRoutes");
+const planRoutes = require("./routes/planRoutes");
 const app = express();
 
 // Middleware
@@ -12,6 +13,7 @@ app.use(cors());
 app.use(express.json());
 app.use("/api/courses", courseRoutes);
 app.use("/api/students", studentRoutes);
+app.use("/api/plans", planRoutes);
 
 // Test route
 app.get("/api/health", async (req, res) => {
