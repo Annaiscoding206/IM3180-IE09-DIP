@@ -3,6 +3,7 @@ const express = require("express");
 const {
   getSelectedCourses,
   addSelectedCourse,
+  removeSelectedCourse,
 } = require("../controllers/planController");
 
 const router = express.Router();
@@ -11,5 +12,7 @@ const router = express.Router();
 router.get("/:requestId/courses", getSelectedCourses);
 // POST /api/plans/:requestId/courses
 router.post("/:requestId/courses", addSelectedCourse);
+// DELETE /api/plans/:requestId/courses/:courseCode
+router.delete("/:requestId/courses/:courseCode", removeSelectedCourse);
 
 module.exports = router;

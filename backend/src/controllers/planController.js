@@ -92,7 +92,41 @@ if (courses.length === 0) {
     });
   }
 };
+const removeSelectedCourse = async (req, res) => {
+  try {
+    const { requestId, courseCode } = req.params;
+
+    const [result] = await pool.query(
+      `
+      DELETE FROM planning_request_course
+      WHERE request_id = ?
+      AND course_code = ?
+      `,
+      [requestId, courseCode]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Selected course not found",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Course removed successfully",
+    });
+  } catch (error) {
+    console.error("Error removing selected course:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to remove selected course",
+    });
+  }
+};
 module.exports = {
   getSelectedCourses,
   addSelectedCourse,
+  removeSelectedCourse,
 };
