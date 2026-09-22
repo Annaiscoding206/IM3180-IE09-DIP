@@ -139,3 +139,48 @@ VALUES
     'MINIMIZE_GAPS',
     2
 );
+-- ============================================================
+-- 8. DEMO CLASS SLOTS
+-- ============================================================
+
+INSERT INTO class_slots (
+    course_code,
+    index_no,
+    class_type,
+    day_of_week,
+    start_time,
+    end_time,
+    venue
+)
+
+VALUES
+
+(
+    'MH1810',
+    15091,
+    'LECTURE',
+    'MON',
+    '08:30:00', 
+    '10:30:00',
+    'LT1'
+),
+
+(
+    'MH1810',
+    15091,
+    'TUTORIAL',
+    'WED',
+    '10:30:00',
+    '11:30:00',
+    'TR1'
+),
+
+(
+    'IE3014',
+    32423,
+    'LECTURE',
+    'TUE',
+    '12:30:00',
+    '14:30:00',
+    'LT2'
+);

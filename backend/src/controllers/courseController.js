@@ -3,7 +3,12 @@ const pool = require("../config/db");
 // GET /api/courses
 const getCourses = async (req, res) => {
   try {
-    const { search } = req.query;
+    const { 
+  search,
+  au,
+  semester,
+  academic_year
+    } = req.query;
 
     let sql = `
       SELECT DISTINCT
@@ -24,15 +29,44 @@ const getCourses = async (req, res) => {
 
     const params = [];
 
-    if (search) {
-      sql += `
-        WHERE course_code LIKE ?
-        OR course_name LIKE ?
-      `;
+    let conditions = [];
 
-      const searchTerm = `%${search}%`;
-      params.push(searchTerm, searchTerm);
-    }
+if (search) {
+  conditions.push(`
+    (
+      course_code LIKE ?
+      OR course_name LIKE ?
+    )
+  `);
+
+  const searchTerm = `%${search}%`;
+  params.push(searchTerm, searchTerm);
+}
+
+
+if (au) {
+  conditions.push(`au = ?`);
+  params.push(au);
+}
+
+
+if (semester) {
+  conditions.push(`semester = ?`);
+  params.push(semester);
+}
+
+
+if (academic_year) {
+  conditions.push(`academic_year = ?`);
+  params.push(academic_year);
+}
+
+
+if (conditions.length > 0) {
+  sql += `
+    WHERE ${conditions.join(" AND ")}
+  `;
+}
 
     sql += ` ORDER BY course_code`;
 
@@ -86,9 +120,25 @@ const getCourseByCode = async (req, res) => {
       });
     }
 
+    const [indexes] = await pool.query(
+      `
+      SELECT DISTINCT
+      index_no,
+      vacancy,
+      vacancy_updated_at
+      FROM course_info
+      WHERE course_code = ?
+      ORDER BY index_no
+      `,
+    [courseCode]
+    );
+
     res.status(200).json({
       success: true,
-      data: courses[0],
+      data: {
+        ...courses[0],
+        indexes: indexes
+      }
     });
   } catch (error) {
     console.error("Error fetching course:", error);
@@ -153,8 +203,51 @@ const getCourseIndexes = async (req, res) => {
   }
 };
 
+const getIndexTimetable = async (req, res) => {
+    try {
+        const { courseCode, indexNo } = req.params;
+
+        const [rows] = await pool.query(
+            `
+            SELECT 
+                class_type,
+                class_group,
+                day_of_week,
+                start_time,
+                end_time,
+                venue,
+                teaching_weeks
+            FROM class_slots
+            WHERE course_code = ?
+            AND index_no = ?
+            ORDER BY day_of_week, start_time
+            `,
+            [courseCode, indexNo]
+        );
+
+
+        res.json({
+            success: true,
+            course_code: courseCode,
+            index_no: indexNo,
+            count: rows.length,
+            data: rows
+        });
+
+
+    } catch (error) {
+        console.error(error);
+
+        res.status(500).json({
+            success:false,
+            message:"Failed to retrieve timetable"
+        });
+    }
+};
+
 module.exports = {
   getCourses,
   getCourseByCode,
-  getCourseIndexes
+  getCourseIndexes,
+  getIndexTimetable
 };

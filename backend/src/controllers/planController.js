@@ -125,8 +125,62 @@ const removeSelectedCourse = async (req, res) => {
     });
   }
 };
+
+const getPlanTimetable = async (req, res) => {
+
+    try {
+
+        const { planId } = req.params;
+
+
+        const [rows] = await pool.query(
+            `
+            SELECT
+                pc.course_code,
+                pc.index_no,
+                cs.class_type,
+                cs.day_of_week,
+                cs.start_time,
+                cs.end_time,
+                cs.venue
+
+            FROM plan_course pc
+
+            JOIN class_slots cs
+            ON pc.course_code = cs.course_code
+            AND pc.index_no = cs.index_no
+
+            WHERE pc.plan_id = ?
+
+            ORDER BY cs.day_of_week, cs.start_time
+            `,
+            [planId]
+        );
+
+
+        res.json({
+            success:true,
+            plan_id:planId,
+            data:rows
+        });
+
+
+    } catch(error){
+
+        console.error(error);
+
+        res.status(500).json({
+            success:false,
+            message:"Failed to retrieve timetable"
+        });
+
+    }
+
+};
+
 module.exports = {
   getSelectedCourses,
   addSelectedCourse,
   removeSelectedCourse,
+  getPlanTimetable
 };

@@ -4,6 +4,7 @@ const {
   getSelectedCourses,
   addSelectedCourse,
   removeSelectedCourse,
+  getPlanTimetable
 } = require("../controllers/planController");
 
 const router = express.Router();
@@ -15,4 +16,8 @@ router.post("/:requestId/courses", addSelectedCourse);
 // DELETE /api/plans/:requestId/courses/:courseCode
 router.delete("/:requestId/courses/:courseCode", removeSelectedCourse);
 
+router.get(
+    "/:planId/timetable",
+    getPlanTimetable
+);
 module.exports = router;

@@ -94,8 +94,9 @@ http://localhost:5000/api/health
 
 Returns all available courses stored in the database.
 
-Only one record is returned for each course even if the course contains multiple indexes.
+The API supports optional query parameters for searching and filtering courses.
 
+Each course is returned only once even if it contains multiple indexes.
 ### Request
 
 ```http
@@ -146,14 +147,19 @@ http://localhost:5000/api/courses
 
 ## 5. Search Courses
 
-### GET `/courses?search={keyword}`
+### GET `/courses?search={keyword}&au={value}&semester={value}`
 
-Searches for courses using either:
+Searches and filters courses using optional query parameters.
 
-- Course code
-- Course name
+The current implementation supports:
 
-The current implementation uses SQL `LIKE` matching.
+- Course code search
+- Course name search
+- Academic unit filtering
+- Semester filtering
+- Academic year filtering
+
+The backend uses SQL `LIKE` matching for keyword search.
 
 ### Request
 
@@ -374,20 +380,34 @@ http://localhost:5000/api/courses/ABC9999/indexes
 | `500 Internal Server Error` | Failed to retrieve course indexes |
 
 ---
+## 8. Student Eligibility API
 
-## 8. API Summary
+### Check Course Prerequisite Eligibility
+
+Checks whether a student is eligible to take a selected course by comparing the course prerequisite requirements with the student's completed courses.
+
+---
+
+### Endpoint
+
+```http
+GET /api/students/:studentId/eligibility/:courseCode
+---
+
+## 9. API Summary
 
 | Method | Endpoint | Description |
 |---|---|---|
 | GET | `/api/health` | Check backend and database connection |
 | GET | `/api/courses` | Retrieve all courses |
-| GET | `/api/courses?search={keyword}` | Search courses by code or name |
+| GET | `/api/courses?search={keyword}&au={value}&semester={value}` | Search and filter courses |
 | GET | `/api/courses/:courseCode` | Retrieve detailed information for one course |
 | GET | `/api/courses/:courseCode/indexes` | Retrieve indexes for one course |
+| GET | `/api/students/:studentId/eligibility/:courseCode` | Check whether a student satisfies course prerequisites |
 
 ---
 
-## 9. Current Backend Structure
+## 10. Current Backend Structure
 
 ```text
 backend/
@@ -449,7 +469,7 @@ Defines the course-related API routes and connects them to the course controller
 
 ---
 
-## 10. Environment Configuration
+## 11. Environment Configuration
 
 Database credentials and configuration are stored in:
 
@@ -482,16 +502,9 @@ node_modules/
 
 ---
 
-## 11. Current Limitations
+## 12. Current Limitations
 
 The following functionality is not yet included in the current Course API implementation:
-
-- Student profile APIs
-- Selected course APIs
-- Plan APIs
-- Add course to plan
-- Remove course from plan
-- Prerequisite eligibility checking
 - Corequisite checking
 - Programme restriction checking
 - Automatic timetable generation
@@ -504,7 +517,7 @@ These functions will be implemented in later development stages.
 
 ---
 
-## 12. Vacancy Data
+## 13. Vacancy Data
 
 Some course index records may currently contain:
 
@@ -521,7 +534,7 @@ The current endpoint returns the vacancy information available in the local data
 
 ---
 
-## 13. Error Handling
+## 14. Error Handling
 
 The current APIs include basic error handling.
 
@@ -567,7 +580,7 @@ Status:
 
 ---
 
-## 14. Current Testing
+## 15. Current Testing
 
 The implemented GET APIs have currently been manually tested using the browser.
 
@@ -591,7 +604,7 @@ Postman testing has not yet been implemented and can be added later when the bac
 
 ---
 
-## 15. Week 5 Backend Progress
+## 16. Week 5 Backend Progress
 
 ### Backend Person 1
 
@@ -635,7 +648,7 @@ stars_companion_db
 
 ---
 
-## 16. Next Backend Development
+## 17. Next Backend Development
 
 The next backend development stage can extend the current structure with additional controllers and routes.
 
@@ -679,7 +692,7 @@ These future APIs will support the Student Profile, Selected Courses, Add to Pla
 
 ---
 
-## 17. Notes for Frontend Integration
+## 18. Notes for Frontend Integration
 
 The frontend should use these APIs instead of directly accessing the MySQL database.
 
@@ -723,7 +736,7 @@ This keeps the frontend, backend, and database responsibilities separated.
 
 ---
 
-## 18. Summary
+## 19. Summary
 
 The Week 5 backend currently provides the foundation required for the Better STARS Course Explorer and Course Detail features.
 
