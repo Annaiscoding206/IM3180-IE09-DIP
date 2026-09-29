@@ -1,3 +1,6 @@
+const pool = require("../config/db");
+const { evaluateEligibility, EligibilityNotFoundError } = require("../services/eligibilityService");
+
 // GET /api/students
 const getAllStudents = async (req, res) => {
   try {
@@ -26,7 +29,7 @@ const getAllStudents = async (req, res) => {
       message: "Failed to fetch students",
     });
   }
-};const pool = require("../config/db");
+};
 
 // GET /api/students/:studentId
 const getStudentById = async (req, res) => {
@@ -71,106 +74,17 @@ const getStudentById = async (req, res) => {
 
 // GET /api/students/:studentId/eligibility/:courseCode
 const checkPrerequisiteEligibility = async (req, res) => {
-
+  try {
     const { studentId, courseCode } = req.params;
-
-    try {
-
-        // 1. Get required prerequisite courses
-        const prerequisiteQuery = `
-            SELECT required_course_code
-            FROM course_requirement
-            WHERE course_code = ?
-            AND requirement_type = 'PREREQUISITE'
-        `;
-
-        const [requirements] = await pool.query(
-            prerequisiteQuery,
-            [courseCode]
-        );
-
-
-        // No prerequisite required
-        if (requirements.length === 0) {
-
-            return res.json({
-                success: true,
-                student_id: studentId,
-                course_code: courseCode,
-                eligible: true,
-                message: "No prerequisite required"
-            });
-
-        }
-
-
-        // 2. Get student's completed courses
-        const completedQuery = `
-            SELECT course_code
-            FROM completed_course
-            WHERE student_id = ?
-        `;
-
-
-        const [completedCourses] = await pool.query(
-            completedQuery,
-            [studentId]
-        );
-
-
-        const completed = completedCourses.map(
-            c => c.course_code
-        );
-
-
-        // 3. Find missing prerequisites
-        const missing = requirements
-            .map(r => r.required_course_code)
-            .filter(reqCourse => 
-                !completed.includes(reqCourse)
-            );
-
-
-        // 4. Return result
-
-        if (missing.length === 0) {
-
-            return res.json({
-                success:true,
-                student_id:studentId,
-                course_code:courseCode,
-                eligible:true,
-                message:"All prerequisites satisfied"
-            });
-
-        }
-
-
-        else {
-
-            return res.json({
-                success:true,
-                student_id:studentId,
-                course_code:courseCode,
-                eligible:false,
-                missing_prerequisites:missing,
-                message:"Missing prerequisite courses"
-            });
-
-        }
-
-
-    } catch(error){
-
-        console.error(error);
-
-        res.status(500).json({
-            success:false,
-            message:"Server error"
-        });
-
+    const eligibility = await evaluateEligibility(studentId, courseCode);
+    return res.status(200).json({ success: true, ...eligibility });
+  } catch (error) {
+    if (error instanceof EligibilityNotFoundError) {
+      return res.status(404).json({ success: false, message: error.message });
     }
-
+    console.error("Error checking eligibility:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
 };
 
 

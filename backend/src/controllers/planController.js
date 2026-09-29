@@ -1,4 +1,5 @@
 const pool = require("../config/db");
+const { evaluateEligibility, EligibilityNotFoundError } = require("../services/eligibilityService");
 const getSelectedCourses = async (req, res) => {
   try {
     const { requestId } = req.params;
@@ -35,38 +36,26 @@ const addSelectedCourse = async (req, res) => {
     const { course_code } = req.body;
 
     const [requests] = await pool.query(
-  `
-  SELECT request_id
-  FROM planning_request
-  WHERE request_id = ?
-  LIMIT 1
-  `,
-  [requestId]
-);
+      `SELECT request_id, student_id
+       FROM planning_request
+       WHERE request_id = ?
+       LIMIT 1`,
+      [requestId]
+    );
 
-if (requests.length === 0) {
-  return res.status(404).json({
-    success: false,
-    message: "Planning request not found",
-  });
-}
+    if (requests.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Planning request not found",
+      });
+    }
 
-    const [courses] = await pool.query(
-  `
-  SELECT course_code
-  FROM course_info
-  WHERE course_code = ?
-  LIMIT 1
-  `,
-  [course_code]
-);
-
-if (courses.length === 0) {
-  return res.status(404).json({
-    success: false,
-    message: "Course not found",
-  });
-}
+    // This is a planning request, not a generated plan. Use its stored student
+    // rather than accepting a student ID supplied by the caller.
+    const eligibility = await evaluateEligibility(requests[0].student_id, course_code);
+    if (!eligibility.eligible) {
+      return res.status(422).json({ success: false, ...eligibility });
+    }
 
     await pool.query(
       `
@@ -84,6 +73,9 @@ if (courses.length === 0) {
       message: "Course added successfully",
     });
   } catch (error) {
+    if (error instanceof EligibilityNotFoundError) {
+      return res.status(404).json({ success: false, message: error.message });
+    }
     console.error("Error adding selected course:", error);
 
     res.status(500).json({
