@@ -9,8 +9,9 @@ class EligibilityNotFoundError extends Error {
 
 const normalizeCode = (value) => value.trim().toUpperCase();
 
-const evaluateEligibility = async (studentId, courseCode) => {
-  const [students] = await pool.query(
+// Optional query executor keeps plan validation on its transaction connection.
+const evaluateEligibility = async (studentId, courseCode, db = pool) => {
+  const [students] = await db.query(
     `SELECT student_id, programme FROM student WHERE student_id = ? LIMIT 1`,
     [studentId]
   );
@@ -18,7 +19,7 @@ const evaluateEligibility = async (studentId, courseCode) => {
     throw new EligibilityNotFoundError("Student not found");
   }
 
-  const [courses] = await pool.query(
+  const [courses] = await db.query(
     `SELECT course_code FROM course_info WHERE course_code = ? LIMIT 1`,
     [courseCode]
   );
@@ -28,18 +29,18 @@ const evaluateEligibility = async (studentId, courseCode) => {
 
   const student = students[0];
   const course = courses[0];
-  const [requirements] = await pool.query(
+  const [requirements] = await db.query(
     `SELECT required_course_code, requirement_group
      FROM course_requirement
      WHERE course_code = ? AND requirement_type = 'PREREQUISITE'
      ORDER BY requirement_group, required_course_code`,
     [course.course_code]
   );
-  const [completedCourses] = await pool.query(
+  const [completedCourses] = await db.query(
     `SELECT course_code FROM completed_course WHERE student_id = ?`,
     [student.student_id]
   );
-  const [restrictions] = await pool.query(
+  const [restrictions] = await db.query(
     `SELECT programme, cohort, restriction_type
      FROM programme_restriction WHERE course_code = ?
      ORDER BY restriction_id`,

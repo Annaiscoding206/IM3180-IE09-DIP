@@ -86,7 +86,11 @@ function setup(change = () => {}) {
     },
   };
   const service = loadModule("backend/src/services/eligibilityService.js", { "../config/db": db });
-  const dependencies = { "../config/db": db, "../services/eligibilityService": service };
+  const planService = loadModule("backend/src/services/planService.js", {
+    "../config/db": db, "./eligibilityService": service,
+    "./clashService": require("../src/services/clashService"),
+  });
+  const dependencies = { "../config/db": db, "../services/eligibilityService": service, "../services/planService": planService };
   const student = loadModule("backend/src/controllers/studentController.js", dependencies);
   const plan = loadModule("backend/src/controllers/planController.js", dependencies);
   async function invoke(handler, req) {

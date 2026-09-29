@@ -1,5 +1,6 @@
 const pool = require("../config/db");
 const { evaluateEligibility, EligibilityNotFoundError } = require("../services/eligibilityService");
+const plans = require("../services/planService");
 const getSelectedCourses = async (req, res) => {
   try {
     const { requestId } = req.params;
@@ -170,9 +171,33 @@ const getPlanTimetable = async (req, res) => {
 
 };
 
+const handlePlan = (action) => async (req, res) => {
+  try {
+    const data = await action(req);
+    return res.status(data.created === true ? 201 : 200).json({
+      success: true, ...(Array.isArray(data) ? { count: data.length } : {}), data,
+    });
+  } catch (error) {
+    if (error instanceof plans.PlanningError) {
+      return res.status(error.status).json({ success: false, message: error.message, ...error.details });
+    }
+    if (error instanceof EligibilityNotFoundError) {
+      return res.status(404).json({ success: false, message: error.message });
+    }
+    console.error("Plan operation error:", error);
+    return res.status(500).json({ success: false, message: "Plan operation failed" });
+  }
+};
+
 module.exports = {
   getSelectedCourses,
   addSelectedCourse,
   removeSelectedCourse,
-  getPlanTimetable
+  getPlanTimetable,
+  getPlan: handlePlan((req) => plans.getPlan(req.params.planId)),
+  getPlanIndexes: handlePlan((req) => plans.getIndexes(req.params.planId)),
+  putPlanIndex: handlePlan((req) => plans.putIndex(req.params.planId, req.params.courseCode, req.body || {})),
+  removePlanIndex: handlePlan((req) => plans.removeIndex(req.params.planId, req.params.courseCode)),
+  getPlanClashes: handlePlan((req) => plans.getClashes(req.params.planId)),
+  previewPlanIndex: handlePlan((req) => plans.previewIndex(req.params.planId, req.body || {})),
 };
