@@ -76,7 +76,31 @@ const getStudentById = async (req, res) => {
 const checkPrerequisiteEligibility = async (req, res) => {
   try {
     const { studentId, courseCode } = req.params;
-    const eligibility = await evaluateEligibility(studentId, courseCode);
+    const rawRequestId = req.query.request_id;
+let requestId = null;
+
+if (rawRequestId !== undefined) {
+  if (
+    typeof rawRequestId !== "string" ||
+    !/^[1-9]\d*$/.test(rawRequestId) ||
+    !Number.isSafeInteger(Number(rawRequestId)) ||
+    Number(rawRequestId) > 2147483647
+  ) {
+    return res.status(400).json({
+      success: false,
+      message: "request_id must be a positive integer",
+    });
+  }
+
+  requestId = Number(rawRequestId);
+}
+
+const eligibility = await evaluateEligibility(
+  studentId,
+  courseCode,
+  pool,
+  requestId
+);
     return res.status(200).json({ success: true, ...eligibility });
   } catch (error) {
     if (error instanceof EligibilityNotFoundError) {

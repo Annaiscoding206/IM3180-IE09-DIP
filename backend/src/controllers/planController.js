@@ -1,118 +1,107 @@
 const pool = require("../config/db");
-const { evaluateEligibility, EligibilityNotFoundError } = require("../services/eligibilityService");
+const { EligibilityNotFoundError } = require("../services/eligibilityService");
 const plans = require("../services/planService");
 const getSelectedCourses = async (req, res) => {
   try {
-    const { requestId } = req.params;
+    // Validates the ID and checks that the request exists.
+    const request = await plans.getRequest(req.params.requestId);
 
     const [courses] = await pool.query(
-      `
-      SELECT
-        request_id,
-        course_code
-      FROM planning_request_course
-      WHERE request_id = ?
-      ORDER BY course_code
-      `,
-      [requestId]
+      `SELECT request_id, course_code
+       FROM planning_request_course
+       WHERE request_id = ?
+       ORDER BY course_code`,
+      [request.request_id]
     );
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       count: courses.length,
       data: courses,
     });
   } catch (error) {
+    if (error instanceof plans.PlanningError) {
+      return res.status(error.status).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
     console.error("Error fetching selected courses:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Failed to fetch selected courses",
     });
   }
 };
+
 const addSelectedCourse = async (req, res) => {
   try {
-    const { requestId } = req.params;
-    const { course_code } = req.body;
-
-    const [requests] = await pool.query(
-      `SELECT request_id, student_id
-       FROM planning_request
-       WHERE request_id = ?
-       LIMIT 1`,
-      [requestId]
+    await plans.addCourseToRequest(
+      req.params.requestId,
+      req.body?.course_code
     );
 
-    if (requests.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Planning request not found",
-      });
-    }
-
-    // This is a planning request, not a generated plan. Use its stored student
-    // rather than accepting a student ID supplied by the caller.
-    const eligibility = await evaluateEligibility(requests[0].student_id, course_code);
-    if (!eligibility.eligible) {
-      return res.status(422).json({ success: false, ...eligibility });
-    }
-
-    await pool.query(
-      `
-      INSERT INTO planning_request_course (
-        request_id,
-        course_code
-      )
-      VALUES (?, ?)
-      `,
-      [requestId, course_code]
-    );
-
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       message: "Course added successfully",
     });
   } catch (error) {
-    if (error instanceof EligibilityNotFoundError) {
-      return res.status(404).json({ success: false, message: error.message });
+    if (error instanceof plans.PlanningError) {
+      return res.status(error.status).json({
+        success: false,
+        message: error.message,
+        ...error.details,
+      });
     }
+
+    if (error instanceof EligibilityNotFoundError) {
+      return res.status(404).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    if (error.code === "ER_DUP_ENTRY") {
+      return res.status(409).json({
+        success: false,
+        message: "Course is already selected in this planning request",
+      });
+    }
+
     console.error("Error adding selected course:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Failed to add selected course",
     });
   }
 };
+
 const removeSelectedCourse = async (req, res) => {
   try {
-    const { requestId, courseCode } = req.params;
-
-    const [result] = await pool.query(
-      `
-      DELETE FROM planning_request_course
-      WHERE request_id = ?
-      AND course_code = ?
-      `,
-      [requestId, courseCode]
+    await plans.removeCourseFromRequest(
+      req.params.requestId,
+      req.params.courseCode
     );
 
-    if (result.affectedRows === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Selected course not found",
-      });
-    }
-
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       message: "Course removed successfully",
     });
   } catch (error) {
+    if (error instanceof plans.PlanningError) {
+      return res.status(error.status).json({
+        success: false,
+        message: error.message,
+        ...error.details,
+      });
+    }
+
     console.error("Error removing selected course:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Failed to remove selected course",
     });
@@ -120,55 +109,71 @@ const removeSelectedCourse = async (req, res) => {
 };
 
 const getPlanTimetable = async (req, res) => {
+  try {
+    const plan = await plans.getPlan(req.params.planId);
 
-    try {
+    const [rows] = await pool.query(
+      `SELECT
+         pc.course_code,
+         pc.index_no,
+         cs.slot_id,
+         cs.class_type,
+         cs.class_group,
+         cs.day_of_week,
+         cs.start_time,
+         cs.end_time,
+         cs.venue,
+         cs.teaching_weeks
+       FROM plan_course pc
+       LEFT JOIN class_slots cs
+         ON pc.course_code = cs.course_code
+         AND pc.index_no = cs.index_no
+       WHERE pc.plan_id = ?
+       ORDER BY
+         FIELD(cs.day_of_week,
+           'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'),
+         cs.start_time,
+         pc.course_code,
+         pc.index_no,
+         cs.slot_id`,
+      [plan.plan_id]
+    );
 
-        const { planId } = req.params;
+    const missingSlotIndexes = rows
+      .filter((row) => row.slot_id === null)
+      .map((row) => ({
+        course_code: row.course_code,
+        index_no: row.index_no,
+      }));
 
+    const sessions = rows.filter((row) => row.slot_id !== null);
 
-        const [rows] = await pool.query(
-            `
-            SELECT
-                pc.course_code,
-                pc.index_no,
-                cs.class_type,
-                cs.day_of_week,
-                cs.start_time,
-                cs.end_time,
-                cs.venue
-
-            FROM plan_course pc
-
-            JOIN class_slots cs
-            ON pc.course_code = cs.course_code
-            AND pc.index_no = cs.index_no
-
-            WHERE pc.plan_id = ?
-
-            ORDER BY cs.day_of_week, cs.start_time
-            `,
-            [planId]
-        );
-
-
-        res.json({
-            success:true,
-            plan_id:planId,
-            data:rows
-        });
-
-
-    } catch(error){
-
-        console.error(error);
-
-        res.status(500).json({
-            success:false,
-            message:"Failed to retrieve timetable"
-        });
-
+    return res.status(200).json({
+      success: true,
+      plan_id: plan.plan_id,
+      empty_plan: rows.length === 0,
+      timetable_available: sessions.length > 0,
+      timetable_complete:
+        rows.length > 0 && missingSlotIndexes.length === 0,
+      missing_slot_indexes: missingSlotIndexes,
+      count: sessions.length,
+      data: sessions,
+    });
+  } catch (error) {
+    if (error instanceof plans.PlanningError) {
+      return res.status(error.status).json({
+        success: false,
+        message: error.message,
+      });
     }
 
+    console.error("Error retrieving plan timetable:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to retrieve timetable",
+    });
+  }
 };
 
 const handlePlan = (action) => async (req, res) => {
@@ -200,4 +205,13 @@ module.exports = {
   removePlanIndex: handlePlan((req) => plans.removeIndex(req.params.planId, req.params.courseCode)),
   getPlanClashes: handlePlan((req) => plans.getClashes(req.params.planId)),
   previewPlanIndex: handlePlan((req) => plans.previewIndex(req.params.planId, req.body || {})),
+  getPlanEligibility: handlePlan(
+  (req) => plans.getPlanEligibility(req.params.planId)
+  ),
+  getPlanValidation: handlePlan(
+  (req) => plans.getPlanValidation(req.params.planId)
+  ),
+  selectPlan: handlePlan(
+  (req) => plans.selectPlan(req.params.planId)
+  ),
 };

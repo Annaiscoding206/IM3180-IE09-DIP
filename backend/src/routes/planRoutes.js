@@ -10,7 +10,10 @@ const {
   putPlanIndex,
   removePlanIndex,
   getPlanClashes,
-  previewPlanIndex
+  previewPlanIndex,
+  getPlanEligibility,
+  getPlanValidation,
+  selectPlan
 } = require("../controllers/planController");
 
 const router = express.Router();
@@ -20,6 +23,9 @@ router.get("/:planId/indexes", getPlanIndexes);
 router.put("/:planId/indexes/:courseCode", putPlanIndex);
 router.delete("/:planId/indexes/:courseCode", removePlanIndex);
 router.get("/:planId/clashes", getPlanClashes);
+router.get("/:planId/eligibility", getPlanEligibility);
+router.post("/:planId/select", selectPlan);
+router.get("/:planId/validation", getPlanValidation);
 router.post("/:planId/clash-check", previewPlanIndex);
 
 // GET /api/plans/:requestId/courses

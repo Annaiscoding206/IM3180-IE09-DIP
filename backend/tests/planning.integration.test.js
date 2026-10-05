@@ -31,6 +31,10 @@ test("planning APIs against local MySQL and HTTP", { skip: process.env.RUN_MYSQL
       // Student deletion cascades this run's requests, plans, and plan_course rows.
       if (createdStudent.value) await pool.query("DELETE FROM student WHERE student_id = ?", [studentId]);
       for (const code of createdCourses) {
+        await pool.query(
+          "DELETE FROM mutual_exclusion WHERE course_code = ? OR excluded_course_code = ?",
+          [code, code]
+        );
         await pool.query("DELETE FROM programme_restriction WHERE course_code = ?", [code]);
         await pool.query("DELETE FROM course_info WHERE course_code = ?", [code]);
       }
@@ -117,11 +121,45 @@ test("planning APIs against local MySQL and HTTP", { skip: process.env.RUN_MYSQL
     assert.equal((await http("GET", `/planning-requests?student_id=${prefix}NONE`)).status, 404);
   });
   assert.ok(requestId, "Request creation is required for remaining cases");
+    await t.test("selected courses validates IDs and returns an empty list", async () => {
+    const invalid = await http("GET", "/plans/abc/courses");
+    assert.equal(invalid.status, 400);
+    assert.equal(invalid.body.success, false);
+
+    const missing = await http("GET", "/plans/2147483647/courses");
+    assert.equal(missing.status, 404);
+    assert.equal(missing.body.message, "Planning request not found");
+
+    const empty = await http("GET", `/plans/${requestId}/courses`);
+    assert.equal(empty.status, 200);
+    assert.deepEqual(empty.body, {
+      success: true,
+      count: 0,
+      data: [],
+    });
+  });
   // Fixtures intentionally include an ineligible selection to prove index writes
   // cannot bypass eligibility even if older/imported request selections exist.
   for (const [letter, code] of Object.entries(codes)) {
     if (letter !== "U") await pool.query("INSERT INTO planning_request_course (request_id, course_code) VALUES (?, ?)", [requestId, code]);
-  }
+  }   await t.test("selected courses returns the request's courses in order", async () => {
+    const response = await http("GET", `/plans/${requestId}/courses`);
+
+    const expectedCodes = Object.entries(codes)
+      .filter(([letter]) => letter !== "U")
+      .map(([, code]) => code)
+      .sort();
+
+    assert.equal(response.status, 200);
+    assert.equal(response.body.count, expectedCodes.length);
+    assert.deepEqual(
+      response.body.data.map((row) => row.course_code),
+      expectedCodes
+    );
+    assert.ok(
+      response.body.data.every((row) => row.request_id === requestId)
+    );
+  });
 
   await t.test("create/list/detail plans; duplicate name returns 409", async () => {
     const planId = await newPlan();
@@ -242,6 +280,227 @@ test("planning APIs against local MySQL and HTTP", { skip: process.env.RUN_MYSQL
     assert.deepEqual(results.map((result) => result.status).sort(), [201, 422]);
     assert.equal((await rows(planId)).length, 1);
   });
+    await t.test("final selection requires a complete valid plan and resets after edits", async () => {
+    // Separate request using this test run's temporary student and courses.
+    const createdRequest = await http("POST", "/planning-requests", {
+      student_id: studentId,
+      academic_year: "2026-2027",
+      semester: 1,
+    });
+
+    assert.equal(createdRequest.status, 201);
+    const selectionRequestId = createdRequest.body.data.request_id;
+
+    for (const code of [codes.A, codes.B]) {
+      const added = await http(
+        "POST",
+        `/plans/${selectionRequestId}/courses`,
+        { course_code: code }
+      );
+      assert.equal(added.status, 201, JSON.stringify(added.body));
+    }
+
+    const createdPlan = await http(
+      "POST",
+      `/planning-requests/${selectionRequestId}/plans`,
+      { plan_name: "Final selection regression" }
+    );
+    assert.equal(createdPlan.status, 201);
+    const planId = createdPlan.body.data.plan_id;
+
+    // An empty plan cannot be selected.
+    let selected = await http("POST", `/plans/${planId}/select`);
+    assert.equal(selected.status, 422);
+    assert.equal(selected.body.validation.can_finalize, false);
+    assert.equal(selected.body.validation.eligibility.empty_plan, true);
+
+    // A partial plan cannot be selected.
+    assert.equal((await put(planId, "A", 101)).status, 201);
+
+    selected = await http("POST", `/plans/${planId}/select`);
+    assert.equal(selected.status, 422);
+    assert.deepEqual(
+      selected.body.validation.eligibility.missing_index_courses,
+      [codes.B]
+    );
+
+    // Both indexes are present and their classes are adjacent.
+    assert.equal((await put(planId, "B", 201)).status, 201);
+
+    const validation = await http("GET", `/plans/${planId}/validation`);
+    assert.equal(validation.status, 200);
+    assert.equal(validation.body.data.can_finalize, true);
+
+    selected = await http("POST", `/plans/${planId}/select`);
+    assert.equal(selected.status, 200);
+    assert.equal(selected.body.data.status, "SELECTED");
+
+    let detail = await http("GET", `/plans/${planId}`);
+    assert.equal(detail.body.data.status, "SELECTED");
+
+    // Removing an index clears SELECTED.
+    const removed = await http(
+      "DELETE",
+      `/plans/${planId}/indexes/${codes.B}`
+    );
+    assert.equal(removed.status, 200);
+
+    detail = await http("GET", `/plans/${planId}`);
+    assert.equal(detail.body.data.status, "GENERATED");
+
+    // Rejected selection must leave the status unchanged.
+    selected = await http("POST", `/plans/${planId}/select`);
+    assert.equal(selected.status, 422);
+
+    detail = await http("GET", `/plans/${planId}`);
+    assert.equal(detail.body.data.status, "GENERATED");
+
+    // Restore and select again.
+    assert.equal((await put(planId, "B", 201)).status, 201);
+    assert.equal(
+      (await http("POST", `/plans/${planId}/select`)).status,
+      200
+    );
+
+    // Replacing an index also clears SELECTED.
+    assert.equal((await put(planId, "A", 102)).status, 200);
+
+    detail = await http("GET", `/plans/${planId}`);
+    assert.equal(detail.body.data.status, "GENERATED");
+
+    // The edited plan remains valid and can be selected again.
+    selected = await http("POST", `/plans/${planId}/select`);
+    assert.equal(selected.status, 200);
+    assert.equal(selected.body.data.validation.can_finalize, true);
+  });
+
+    await t.test("concurrent mutually exclusive course additions allow only one", async () => {
+    const created = await http("POST", "/planning-requests", {
+      student_id: studentId,
+      academic_year: "2026-2027",
+      semester: 1,
+    });
+
+    assert.equal(created.status, 201);
+    const conflictRequestId = created.body.data.request_id;
+
+    await pool.query(
+      `INSERT INTO mutual_exclusion
+         (course_code, excluded_course_code)
+       VALUES (?, ?)`,
+      [codes.A, codes.B]
+    );
+
+    try {
+      const responses = await Promise.all([
+        http("POST", `/plans/${conflictRequestId}/courses`, {
+          course_code: codes.A,
+        }),
+        http("POST", `/plans/${conflictRequestId}/courses`, {
+          course_code: codes.B,
+        }),
+      ]);
+
+      assert.deepEqual(
+        responses.map((response) => response.status).sort(),
+        [201, 422],
+        JSON.stringify(responses)
+      );
+
+      const rejected = responses.find(
+        (response) => response.status === 422
+      );
+      assert.equal(rejected.body.mutual_exclusion_eligible, false);
+      assert.equal(rejected.body.can_select, false);
+
+      const selected = await http(
+        "GET",
+        `/plans/${conflictRequestId}/courses`
+      );
+
+      assert.equal(selected.status, 200);
+      assert.equal(selected.body.count, 1);
+
+      assert.deepEqual(
+        rejected.body.conflicting_selected_courses,
+        [selected.body.data[0].course_code]
+      );
+    } finally {
+      await pool.query(
+        `DELETE FROM mutual_exclusion
+         WHERE course_code = ? AND excluded_course_code = ?`,
+        [codes.A, codes.B]
+      );
+    }
+  });
+
+    await t.test("switching and concurrent selection leave one selected plan", async () => {
+    const created = await http("POST", "/planning-requests", {
+      student_id: studentId,
+      academic_year: "2026-2027",
+      semester: 1,
+    });
+    assert.equal(created.status, 201);
+    const selectionRequestId = created.body.data.request_id;
+
+    const added = await http(
+      "POST",
+      `/plans/${selectionRequestId}/courses`,
+      { course_code: codes.A }
+    );
+    assert.equal(added.status, 201);
+
+    const planIds = [];
+
+    for (const name of ["Selection A", "Selection B"]) {
+      const response = await http(
+        "POST",
+        `/planning-requests/${selectionRequestId}/plans`,
+        { plan_name: name }
+      );
+      assert.equal(response.status, 201);
+
+      const planId = response.body.data.plan_id;
+      planIds.push(planId);
+      assert.equal((await put(planId, "A", 101)).status, 201);
+    }
+
+    // Selecting B after A must deselect A.
+    for (const planId of planIds) {
+      const response = await http("POST", `/plans/${planId}/select`);
+      assert.equal(response.status, 200, JSON.stringify(response.body));
+    }
+
+    const first = await http("GET", `/plans/${planIds[0]}`);
+    const second = await http("GET", `/plans/${planIds[1]}`);
+
+    assert.equal(first.body.data.status, "GENERATED");
+    assert.equal(second.body.data.status, "SELECTED");
+
+    // Both requests should complete without a database error.
+    const responses = await Promise.all(
+      planIds.map((planId) =>
+        http("POST", `/plans/${planId}/select`)
+      )
+    );
+
+    assert.deepEqual(
+      responses.map((response) => response.status),
+      [200, 200],
+      JSON.stringify(responses)
+    );
+
+    const [selectedPlans] = await pool.query(
+      `SELECT plan_id
+       FROM plan
+       WHERE request_id = ? AND status = 'SELECTED'`,
+      [selectionRequestId]
+    );
+
+    assert.equal(selectedPlans.length, 1);
+    assert.ok(planIds.includes(selectedPlans[0].plan_id));
+  });
+
   await t.test("invalid IDs/body and missing resources return client errors", async () => {
     assert.equal((await http("GET", "/plans/nope")).status, 400);
     assert.equal((await http("GET", "/plans/2147483647")).status, 404);

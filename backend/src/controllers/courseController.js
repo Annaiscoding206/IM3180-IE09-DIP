@@ -1,8 +1,38 @@
 const pool = require("../config/db");
 
+class CourseInputError extends Error {}
+function codeParam(value) {
+  if (typeof value !== "string" || !/^[A-Za-z0-9]{1,10}$/.test(value.trim())) {
+    throw new CourseInputError("courseCode must contain 1–10 letters or digits");
+  }
+  return value.trim().toUpperCase();
+}
+function indexParam(value) {
+  if (typeof value !== "string" || !/^[0-9]+$/.test(value) ||
+      !Number.isSafeInteger(Number(value)) || Number(value) < 1 || Number(value) > 2147483647) {
+    throw new CourseInputError("indexNo must be a positive integer");
+  }
+  return Number(value);
+}
+function validateFilters(query) {
+  for (const key of ["search", "au", "semester", "academic_year"]) {
+    if (query[key] !== undefined && (typeof query[key] !== "string" || !query[key].trim())) {
+      throw new CourseInputError(`${key} must be a nonempty string`);
+    }
+  }
+  if (query.au !== undefined && (!/^\d+(?:\.\d+)?$/.test(query.au) || !Number.isFinite(Number(query.au)) || Number(query.au) <= 0)) {
+    throw new CourseInputError("au must be a positive number");
+  }
+  if (query.semester !== undefined && !/^[1-3]$/.test(query.semester)) {
+    throw new CourseInputError("semester must be 1, 2 or 3");
+  }
+}
+
+
 // GET /api/courses
 const getCourses = async (req, res) => {
   try {
+    validateFilters(req.query);
     const { 
   search,
   au,
@@ -78,6 +108,9 @@ if (conditions.length > 0) {
       data: courses,
     });
   } catch (error) {
+    if (error instanceof CourseInputError) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
     console.error("Error fetching courses:", error);
 
     res.status(500).json({
@@ -90,7 +123,7 @@ if (conditions.length > 0) {
 // GET /api/courses/:courseCode
 const getCourseByCode = async (req, res) => {
   try {
-    const { courseCode } = req.params;
+    const courseCode = codeParam(req.params.courseCode);
 
     const [courses] = await pool.query(
       `
@@ -141,6 +174,9 @@ const getCourseByCode = async (req, res) => {
       }
     });
   } catch (error) {
+    if (error instanceof CourseInputError) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
     console.error("Error fetching course:", error);
 
     res.status(500).json({
@@ -153,7 +189,7 @@ const getCourseByCode = async (req, res) => {
 // GET /api/courses/:courseCode/indexes
 const getCourseIndexes = async (req, res) => {
   try {
-    const { courseCode } = req.params;
+    const courseCode = codeParam(req.params.courseCode);
 
     // Check whether the course exists
     const [courses] = await pool.query(
@@ -194,6 +230,9 @@ const getCourseIndexes = async (req, res) => {
       data: indexes,
     });
   } catch (error) {
+    if (error instanceof CourseInputError) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
     console.error("Error fetching course indexes:", error);
 
     res.status(500).json({
@@ -205,11 +244,22 @@ const getCourseIndexes = async (req, res) => {
 
 const getIndexTimetable = async (req, res) => {
     try {
-        const { courseCode, indexNo } = req.params;
+        const courseCode = codeParam(req.params.courseCode);
+        const indexNo = indexParam(req.params.indexNo);
+        const [indexes] = await pool.query(
+            "SELECT course_code, index_no FROM course_info WHERE course_code = ? AND index_no = ? LIMIT 1",
+            [courseCode, indexNo]
+        );
+        if (!indexes.length) {
+            return res.status(404).json({ success: false, message: "Course/index pair not found" });
+        }
 
         const [rows] = await pool.query(
             `
             SELECT 
+                slot_id,
+                course_code,
+                index_no,
                 class_type,
                 class_group,
                 day_of_week,
@@ -220,7 +270,7 @@ const getIndexTimetable = async (req, res) => {
             FROM class_slots
             WHERE course_code = ?
             AND index_no = ?
-            ORDER BY day_of_week, start_time
+            ORDER BY FIELD(day_of_week, 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'), start_time, slot_id
             `,
             [courseCode, indexNo]
         );
@@ -229,13 +279,17 @@ const getIndexTimetable = async (req, res) => {
         res.json({
             success: true,
             course_code: courseCode,
-            index_no: indexNo,
+            index_no: req.params.indexNo,
+            timetable_available: rows.length > 0,
             count: rows.length,
             data: rows
         });
 
 
     } catch (error) {
+    if (error instanceof CourseInputError) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
         console.error(error);
 
         res.status(500).json({

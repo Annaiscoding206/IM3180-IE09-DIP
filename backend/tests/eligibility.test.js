@@ -32,6 +32,8 @@ const seeded = {
       course_code, programme, cohort: cohort === "NULL" ? null : cohort.slice(1, -1), restriction_type,
     })),
   requests: [{ request_id: "17", student_id: "DEMO001" }],
+  selected: [],
+  exclusions: [],
 };
 assert.equal(seeded.requirements.length, 19, "Load all seeded requirement rows");
 assert.equal(seeded.restrictions.length, 5, "Load all seeded restriction rows");
@@ -62,12 +64,34 @@ function setup(change = () => {}) {
   const inserts = [];
   const db = {
     async query(sql, params) {
+      if (
+        sql.trim() ===
+        "SET TRANSACTION ISOLATION LEVEL READ COMMITTED"
+      ) {
+        return [{}];
+      }
+      if (/FROM course_info\b/.test(sql)) {
+        return [data.courses.filter((row) =>
+          same(row.course_code, params[0])
+        )];
+      }
       if (/FROM student\b/.test(sql)) return [data.students.filter((row) => same(row.student_id, params[0]))];
-      if (/FROM course_info\b/.test(sql)) return [data.courses.filter((row) => same(row.course_code, params[0]))];
+      if (/FROM mutual_exclusion\b/.test(sql)) {
+        return [data.exclusions.filter((row) =>
+          same(row.course_code, params[0]) ||
+          same(row.excluded_course_code, params[1])
+        )];
+      }
+
       if (/FROM course_requirement\b/.test(sql)) {
-        assert.match(sql, /requirement_type = 'PREREQUISITE'/);
-        assert.match(sql, /SELECT required_course_code, requirement_group/);
-        return [data.requirements.filter((row) => same(row.course_code, params[0]) && row.requirement_type === "PREREQUISITE")];
+        const type = sql.includes("'COREQUISITE'")
+          ? "COREQUISITE"
+          : "PREREQUISITE";
+
+        return [data.requirements.filter((row) =>
+          same(row.course_code, params[0]) &&
+          row.requirement_type === type
+        )];
       }
       if (/FROM completed_course\b/.test(sql)) return [data.completed.filter((row) => same(row.student_id, params[0]))];
       if (/FROM programme_restriction\b/.test(sql)) {
@@ -75,17 +99,65 @@ function setup(change = () => {}) {
         return [data.restrictions.filter((row) => same(row.course_code, params[0]))];
       }
       if (/FROM planning_request\b/.test(sql)) {
-        assert.match(sql, /SELECT request_id, student_id/);
-        return [data.requests.filter((row) => same(row.request_id, params[0]))];
+        return [data.requests.filter((row) =>
+          same(row.request_id, params[0]) &&
+          (params.length < 2 || same(row.student_id, params[1]))
+        )];
       }
+
+      if (/FROM planning_request_course\b/.test(sql)) {
+        return [data.selected.filter((row) =>
+          same(row.request_id, params[0]) &&
+          (params.length < 2 || same(row.course_code, params[1]))
+        )];
+      }
+
       if (/INSERT INTO planning_request_course/.test(sql)) {
         inserts.push(plain(params));
+        data.selected.push({
+          request_id: params[0],
+          course_code: params[1],
+        });
         return [{ affectedRows: 1 }];
+      }
+
+      if (/UPDATE plan\b/.test(sql)) {
+        return [{ affectedRows: 0 }];
       }
       assert.fail(`Unexpected SQL: ${sql}`);
     },
   };
-  const service = loadModule("backend/src/services/eligibilityService.js", { "../config/db": db });
+    db.getConnection = async () => {
+    let selectedBefore;
+    let insertsBefore;
+
+    return {
+      query: (sql, params) => db.query(sql, params),
+
+      async beginTransaction() {
+        selectedBefore = structuredClone(data.selected);
+        insertsBefore = inserts.length;
+      },
+
+      async commit() {},
+
+      async rollback() {
+        data.selected = selectedBefore;
+        inserts.length = insertsBefore;
+      },
+
+      release() {},
+    };
+  };
+
+  const service = loadModule(
+    "backend/src/services/eligibilityService.js",
+    {
+      "../config/db": db,
+      "./corequisiteService": require("../src/services/corequisiteService"),
+      "./mutualExclusionService": require("../src/services/mutualExclusionService"),
+    }
+  );
   const planService = loadModule("backend/src/services/planService.js", {
     "../config/db": db, "./eligibilityService": service,
     "./clashService": require("../src/services/clashService"),
@@ -104,7 +176,19 @@ function setup(change = () => {}) {
   return {
     data, db, inserts,
     check: (courseCode, studentId = "DEMO001") =>
-      invoke(student.checkPrerequisiteEligibility, { params: { studentId, courseCode } }),
+      invoke(student.checkPrerequisiteEligibility, {
+        params: { studentId, courseCode },
+        query: {},
+      }),
+
+    evaluate: async (courseCode, requestId = null, planCodes = null) =>
+      plain(await service.evaluateEligibility(
+        "DEMO001",
+        courseCode,
+        db,
+        requestId,
+        planCodes
+      )),
     add: (course_code, requestId = "17", extraBody = {}) =>
       invoke(plan.addSelectedCourse, { params: { requestId }, body: { course_code, ...extraBody } }),
   };
@@ -180,7 +264,7 @@ test("POST accepts an eligible course under request_id", async () => {
   const response = await app.add("IE3014");
   assert.equal(response.statusCode, 201);
   assert.deepEqual(response.body, { success: true, message: "Course added successfully" });
-  assert.deepEqual(app.inserts, [["17", "IE3014"]]);
+  assert.deepEqual(app.inserts, [[17, "IE3014"]]);
 });
 
 test("POST unknown request, student, or course returns 404 without inserting", async () => {
@@ -293,5 +377,151 @@ test("database failure returns 500 and does not insert", async () => {
   };
   assert.equal((await app.check("MH1810")).statusCode, 500);
   assert.equal((await app.add("MH1810")).statusCode, 500);
+  assert.deepEqual(app.inserts, []);
+});
+test("missing corequisite allows selection but fails eligibility", async () => {
+  const app = setup((data) => {
+    data.completed = [];
+  });
+
+  const result = await app.evaluate("MH1811");
+
+  assert.equal(result.can_select, true);
+  assert.equal(result.eligible, false);
+  assert.equal(result.corequisite_eligible, false);
+  assert.deepEqual(result.missing_corequisite_groups, [
+    { requirement_group: 1, alternatives: ["MH1810"] },
+  ]);
+
+  assert.equal((await app.add("MH1811")).statusCode, 201);
+});
+
+test("request corequisite does not satisfy a plan that omits it", async () => {
+  const app = setup((data) => {
+    data.completed = [];
+    data.selected = [
+      { request_id: 17, course_code: "MH1810" },
+      { request_id: 17, course_code: "MH1811" },
+    ];
+  });
+
+  const requestResult = await app.evaluate("MH1811", 17);
+  assert.equal(requestResult.corequisite_eligible, true);
+
+  const incomplete = await app.evaluate("MH1811", 17, ["MH1811"]);
+  assert.equal(incomplete.corequisite_eligible, false);
+  assert.equal(incomplete.corequisite_context, "completed_and_plan_courses");
+
+  const complete = await app.evaluate(
+    "MH1811", 17, ["MH1810", "MH1811"]
+  );
+  assert.equal(complete.eligible, true);
+});
+
+test("completed mutually exclusive course blocks selection", async () => {
+  const app = setup((data) => {
+    data.exclusions = [
+      { course_code: "MH1811", excluded_course_code: "MH1100" },
+    ];
+    data.completed.push({
+      student_id: "DEMO001",
+      course_code: "MH1100",
+    });
+  });
+
+  const response = await app.add("MH1811");
+
+  assert.equal(response.statusCode, 422);
+  assert.equal(response.body.can_select, false);
+  assert.deepEqual(
+    response.body.conflicting_completed_courses,
+    ["MH1100"]
+  );
+  assert.deepEqual(app.inserts, []);
+});
+
+test("reverse-direction exclusion blocks a selected-course conflict", async () => {
+  const app = setup((data) => {
+    data.exclusions = [
+      { course_code: "MH1100", excluded_course_code: "MH1811" },
+    ];
+    data.selected = [
+      { request_id: 17, course_code: "MH1100" },
+    ];
+  });
+
+  const response = await app.add("MH1811");
+
+  assert.equal(response.statusCode, 422);
+  assert.equal(response.body.mutual_exclusion_eligible, false);
+  assert.deepEqual(
+    response.body.conflicting_selected_courses,
+    ["MH1100"]
+  );
+  assert.deepEqual(app.inserts, []);
+});
+
+test("request corequisite does not satisfy a plan that omits it", async () => {
+  const app = setup((data) => {
+    data.completed = [];
+    data.selected = [
+      { request_id: 17, course_code: "MH1810" },
+      { request_id: 17, course_code: "MH1811" },
+    ];
+  });
+
+  const requestResult = await app.evaluate("MH1811", 17);
+  assert.equal(requestResult.corequisite_eligible, true);
+
+  const incomplete = await app.evaluate("MH1811", 17, ["MH1811"]);
+  assert.equal(incomplete.corequisite_eligible, false);
+  assert.equal(incomplete.corequisite_context, "completed_and_plan_courses");
+
+  const complete = await app.evaluate(
+    "MH1811", 17, ["MH1810", "MH1811"]
+  );
+  assert.equal(complete.eligible, true);
+});
+
+test("completed mutually exclusive course blocks selection", async () => {
+  const app = setup((data) => {
+    data.exclusions = [
+      { course_code: "MH1811", excluded_course_code: "MH1100" },
+    ];
+    data.completed.push({
+      student_id: "DEMO001",
+      course_code: "MH1100",
+    });
+  });
+
+  const response = await app.add("MH1811");
+
+  assert.equal(response.statusCode, 422);
+  assert.equal(response.body.can_select, false);
+  assert.deepEqual(
+    response.body.conflicting_completed_courses,
+    ["MH1100"]
+  );
+  assert.deepEqual(app.inserts, []);
+});
+
+test("reverse-direction exclusion blocks a selected-course conflict", async () => {
+  const app = setup((data) => {
+    data.exclusions = [
+      { course_code: "MH1100", excluded_course_code: "MH1811" },
+    ];
+    data.selected = [
+      { request_id: 17, course_code: "MH1100" },
+    ];
+  });
+
+  const response = await app.add("MH1811");
+
+  assert.equal(response.statusCode, 422);
+  assert.equal(response.body.mutual_exclusion_eligible, false);
+  assert.deepEqual(
+    response.body.conflicting_selected_courses,
+    ["MH1100"]
+  );
   assert.deepEqual(app.inserts, []);
 });
