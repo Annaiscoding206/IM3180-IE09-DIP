@@ -29,7 +29,14 @@ async function getRequest(requestId, db = pool) {
   const id = integer(requestId, "requestId");
   const [rows] = await db.query("SELECT * FROM planning_request WHERE request_id = ?", [id]);
   if (!rows.length) throw new PlanningError(404, "Planning request not found");
-  return rows[0];
+  const [selectedCourses] = await db.query(
+    "SELECT course_code FROM planning_request_course WHERE request_id = ? ORDER BY course_code",
+    [id]
+  );
+  return {
+    ...rows[0],
+    selected_courses: selectedCourses.map((row) => row.course_code),
+  };
 }
 
 async function requireStudent(studentId) {

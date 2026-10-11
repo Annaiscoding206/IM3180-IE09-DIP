@@ -57,9 +57,22 @@ const getStudentById = async (req, res) => {
       });
     }
 
+    const [completedCourses] = await pool.query(
+      `
+      SELECT course_code
+      FROM completed_course
+      WHERE student_id = ?
+      ORDER BY course_code
+      `,
+      [studentId]
+    );
+
     res.status(200).json({
       success: true,
-      data: students[0],
+      data: {
+        ...students[0],
+        completed_courses: completedCourses.map((row) => row.course_code),
+      },
     });
   } catch (error) {
     console.error("Error fetching student:", error);

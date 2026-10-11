@@ -66,6 +66,22 @@ CREATE TABLE course_info (
 
 
 -- ============================================================
+-- 1A. COURSE TYPES
+-- ============================================================
+-- A course can contribute to more than one curriculum bucket.
+-- Kept separate from course_info because that table has one row per index.
+-- ============================================================
+
+CREATE TABLE course_type (
+    course_code VARCHAR(10) NOT NULL,
+    type_code ENUM('CORE', 'MPE', 'BDE') NOT NULL,
+
+    PRIMARY KEY (course_code, type_code),
+    INDEX idx_course_type_code (type_code)
+);
+
+
+-- ============================================================
 -- 2. CLASS SLOTS
 -- ============================================================
 
