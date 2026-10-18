@@ -7,6 +7,7 @@ const courseRoutes = require("./routes/courseRoutes");
 const studentRoutes = require("./routes/studentRoutes");
 const planRoutes = require("./routes/planRoutes");
 const planningRequestRoutes = require("./routes/planningRequestRoutes");
+const chatRoutes = require("./routes/chatRoutes");
 const app = express();
 
 // Middleware
@@ -16,6 +17,7 @@ app.use("/api/courses", courseRoutes);
 app.use("/api/students", studentRoutes);
 app.use("/api/plans", planRoutes);
 app.use("/api/planning-requests", planningRequestRoutes);
+app.use("/api/chat", chatRoutes);
 
 // Test route
 app.get("/api/health", async (req, res) => {
