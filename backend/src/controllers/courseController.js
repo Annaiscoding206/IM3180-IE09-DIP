@@ -1,6 +1,14 @@
 const pool = require("../config/db");
 
 class CourseInputError extends Error {}
+function withCourseTypes(course) {
+  return {
+    ...course,
+    course_types: course.course_types
+      ? course.course_types.split(",")
+      : [],
+  };
+}
 function codeParam(value) {
   if (typeof value !== "string" || !/^[A-Za-z0-9]{1,10}$/.test(value.trim())) {
     throw new CourseInputError("courseCode must contain 1–10 letters or digits");
@@ -53,7 +61,16 @@ const getCourses = async (req, res) => {
         bde,
         gepe,
         academic_year,
-        semester
+        semester,
+        (
+          SELECT GROUP_CONCAT(
+            ct.type_code
+            ORDER BY FIELD(ct.type_code, 'CORE', 'MPE', 'BDE')
+            SEPARATOR ','
+          )
+          FROM course_type ct
+          WHERE ct.course_code = course_info.course_code
+        ) AS course_types
       FROM course_info
     `;
 
@@ -105,7 +122,7 @@ if (conditions.length > 0) {
     res.status(200).json({
       success: true,
       count: courses.length,
-      data: courses,
+      data: courses.map(withCourseTypes),
     });
   } catch (error) {
     if (error instanceof CourseInputError) {
@@ -139,7 +156,16 @@ const getCourseByCode = async (req, res) => {
         bde,
         gepe,
         academic_year,
-        semester
+        semester,
+        (
+          SELECT GROUP_CONCAT(
+            ct.type_code
+            ORDER BY FIELD(ct.type_code, 'CORE', 'MPE', 'BDE')
+            SEPARATOR ','
+          )
+          FROM course_type ct
+          WHERE ct.course_code = course_info.course_code
+        ) AS course_types
       FROM course_info
       WHERE course_code = ?
       `,
@@ -169,7 +195,7 @@ const getCourseByCode = async (req, res) => {
     res.status(200).json({
       success: true,
       data: {
-        ...courses[0],
+        ...withCourseTypes(courses[0]),
         indexes: indexes
       }
     });

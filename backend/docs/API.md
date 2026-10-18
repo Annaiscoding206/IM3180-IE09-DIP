@@ -94,7 +94,7 @@ Optional query filters:
 
 Example: `/courses?search=MH1810&semester=1&academic_year=2026-2027`.
 
-Returns distinct course metadata ordered by course code. Multiple indexes do not create duplicate identical metadata rows. Metadata fields include `course_code`, `course_name`, `au`, `grading_type`, `exam_datetime`, `prerequisite_text`, `restriction_text`, `mutually_exclusive_text`, `bde`, `gepe`, `academic_year`, and `semester`.
+Returns distinct course metadata ordered by course code. Multiple indexes do not create duplicate identical metadata rows. Metadata fields include `course_code`, `course_name`, `au`, `grading_type`, `exam_datetime`, `prerequisite_text`, `restriction_text`, `mutually_exclusive_text`, `bde`, `gepe`, `academic_year`, `semester`, and `course_types`. `course_types` is an array and may contain any combination of `CORE`, `MPE`, and `BDE`.
 
 No matches is a successful 200 response:
 
