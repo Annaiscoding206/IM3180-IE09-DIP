@@ -488,6 +488,29 @@ CREATE TABLE planning_objective (
 
 
 -- ============================================================
+-- 12A. DAY-SPECIFIC BLOCKED PERIODS
+-- ============================================================
+-- Hard unavailability, separate from global planning_time_preference.
+
+CREATE TABLE planning_blocked_period (
+    block_id INT AUTO_INCREMENT PRIMARY KEY,
+    request_id INT NOT NULL,
+    day_of_week ENUM('MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN') NOT NULL,
+    start_time TIME NOT NULL,
+    end_time TIME NOT NULL,
+
+    CONSTRAINT fk_blocked_period_request
+        FOREIGN KEY (request_id)
+        REFERENCES planning_request(request_id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+
+    CONSTRAINT chk_blocked_period_time CHECK (end_time > start_time),
+    UNIQUE KEY uq_blocked_period (request_id, day_of_week, start_time, end_time)
+);
+
+
+-- ============================================================
 -- 13. GENERATED TIMETABLE PLAN
 -- ============================================================
 -- A planning request may generate:
