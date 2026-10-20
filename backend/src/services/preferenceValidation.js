@@ -1,4 +1,4 @@
-const { PlanningError } = require("./planService");
+const { PlanningError } = require("./planningError");
 
 const DAYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 const TYPES = ["PREFER", "AVOID"];

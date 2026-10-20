@@ -1,14 +1,8 @@
 const pool = require("../config/db");
 const { evaluateEligibility } = require("./eligibilityService");
 const { checkClashes } = require("./clashService");
-
-class PlanningError extends Error {
-  constructor(status, message, details = {}) {
-    super(message);
-    this.status = status;
-    this.details = details;
-  }
-}
+const { PlanningError } = require("./planningError");
+const { readPreferenceSnapshot, checkHardConstraints } = require("./hardConstraintService");
 
 function integer(value, name, max = 2147483647) {
   if (!["string", "number"].includes(typeof value) || !/^[1-9]\d*$/.test(String(value)) ||
@@ -66,6 +60,7 @@ async function listRequests(studentId) {
 
 async function createPlan(requestId, body = {}) {
   const name = text(body.plan_name, "plan_name", 50);
+  if (name.toUpperCase().startsWith("AUTO PLAN ")) throw new PlanningError(400, "AUTO Plan names are reserved for generated alternatives");
   const request = await getRequest(requestId);
   try {
     const [result] = await pool.query("INSERT INTO plan (request_id, plan_name) VALUES (?, ?)", [request.request_id, name]);
@@ -168,6 +163,10 @@ async function validateCandidate(plan, courseCode, indexNo, db, lock) {
 }
 
 async function validateTimetable(planId, indexes, db, candidate) {
+  return { plan_id: planId, ...(candidate ? { candidate } : {}), ...checkClashes(await readSchedules(indexes, db)) };
+}
+
+async function readSchedules(indexes, db) {
   // Read each index independently so missing slots cannot disappear in an INNER JOIN.
   const schedules = [];
   for (const index of indexes) {
@@ -178,7 +177,7 @@ async function validateTimetable(planId, indexes, db, candidate) {
     );
     schedules.push({ ...index, slots });
   }
-  return { plan_id: planId, ...(candidate ? { candidate } : {}), ...checkClashes(schedules) };
+  return schedules;
 }
 
 const withoutCourse = (indexes, code) => indexes.filter((row) => row.course_code.toUpperCase() !== code.toUpperCase());
@@ -274,6 +273,10 @@ async function removeIndex(planId, courseCode) {
 async function getPlanEligibility(planId, db = pool) {
   const plan = await getPlan(planId, db);
   const indexes = await readIndexes(plan.plan_id, db);
+  return evaluatePlanAcademics(plan, indexes, db);
+}
+
+async function evaluatePlanAcademics(plan, indexes, db) {
 
   const planCourseCodes = [
     ...new Set(
@@ -494,50 +497,37 @@ async function getPlanValidation(planId, db = null) {
       getPlanValidation(planId, connection)
     );
   }
-    const plan = await getPlan(planId, db, true);
-    const indexes = await readIndexes(plan.plan_id, db);
+  const plan = await getPlan(planId, db, true);
+  return validatePlanContents(plan, await readIndexes(plan.plan_id, db), db);
+}
 
-    const eligibility = await getPlanEligibility(plan.plan_id, db);
-
-    const timetable = await validateTimetable(
-      plan.plan_id,
-      indexes,
-      db
+// Shared by final selection and generation BEFORE inserting generated plan rows.
+// Caller holds the request lock; generated and manual plans obey the same rules.
+async function validatePlanContents(plan, indexes, db) {
+  const eligibility = await evaluatePlanAcademics(plan, indexes, db);
+  const schedules = await readSchedules(indexes, db);
+  const timetable = { plan_id: plan.plan_id ?? null, ...checkClashes(schedules) };
+  const invalidIndexes = [];
+  for (const index of indexes) {
+    const [rows] = await db.query(
+      "SELECT academic_year, semester FROM course_info WHERE course_code = ? AND index_no = ?",
+      [index.course_code, index.index_no]
     );
-
-    const [invalidIndexes] = await db.query(
-      `SELECT pc.course_code, pc.index_no
-       FROM plan_course pc
-       LEFT JOIN course_info ci
-         ON ci.course_code = pc.course_code
-         AND ci.index_no = pc.index_no
-       WHERE pc.plan_id = ?
-         AND (
-           ci.course_code IS NULL
-           OR ci.academic_year IS NULL
-           OR ci.semester IS NULL
-           OR ci.academic_year <> ?
-           OR ci.semester <> ?
-         )
-       ORDER BY pc.course_code`,
-      [plan.plan_id, plan.academic_year, plan.semester]
-    );
-
-    const canFinalize =
-      eligibility.eligible &&
-      timetable.can_save &&
-      invalidIndexes.length === 0;
-
-    return {
-      plan_id: plan.plan_id,
-      request_id: plan.request_id,
-      can_finalize: canFinalize,
-      requires_review: eligibility.requires_review,
-      invalid_term_indexes: invalidIndexes,
-      eligibility,
-      timetable,
-    };
-
+    if (!rows.length || rows[0].academic_year !== plan.academic_year || rows[0].semester !== plan.semester) {
+      invalidIndexes.push({ course_code: index.course_code, index_no: index.index_no });
+    }
+  }
+  const constraints = checkHardConstraints(schedules, await readPreferenceSnapshot(db, plan.request_id));
+  return {
+    plan_id: plan.plan_id ?? null,
+    request_id: plan.request_id,
+    can_finalize: eligibility.eligible && timetable.can_save && invalidIndexes.length === 0 && constraints.valid,
+    requires_review: eligibility.requires_review,
+    invalid_term_indexes: invalidIndexes,
+    eligibility,
+    timetable,
+    constraints,
+  };
 }
 
 async function selectPlan(planId) {
@@ -583,4 +573,5 @@ module.exports = {
   getPlan, getIndexes, getClashes, previewIndex, putIndex, removeIndex,
   getPlanEligibility, getPlanValidation, selectPlan,
   addCourseToRequest, removeCourseFromRequest,
+  validatePlanContents, evaluatePlanAcademics, readSchedules, transaction, integer,
 };

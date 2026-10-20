@@ -161,6 +161,8 @@ function setup(change = () => {}) {
   const planService = loadModule("backend/src/services/planService.js", {
     "../config/db": db, "./eligibilityService": service,
     "./clashService": require("../src/services/clashService"),
+    "./planningError": require("../src/services/planningError"),
+    "./hardConstraintService": require("../src/services/hardConstraintService"),
   });
   const dependencies = { "../config/db": db, "../services/eligibilityService": service, "../services/planService": planService };
   const student = loadModule("backend/src/controllers/studentController.js", dependencies);

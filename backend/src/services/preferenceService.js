@@ -1,5 +1,5 @@
 const pool = require("../config/db");
-const { PlanningError } = require("./planService");
+const { PlanningError } = require("./planningError");
 const { validatePreferences, validateBlock } = require("./preferenceValidation");
 const { invalidateRequestPlans } = require("./planInvalidationService");
 
@@ -119,4 +119,4 @@ function clearBlocks(requestId, studentId) {
   });
 }
 
-module.exports = { getPreferences, replacePreferences, getBlocks, addBlock, removeBlock, clearBlocks };
+module.exports = { getPreferences, replacePreferences, getBlocks, addBlock, removeBlock, clearBlocks, readPreferences, readBlocks };
