@@ -4,6 +4,7 @@ import { Agent } from "@openai/agents";
 import { getStudentTimetableTool } from "./tools/timetableTools.mjs";
 import { getCourseInformationTool } from "./tools/courseTools.mjs";
 import { checkCourseEligibilityTool } from "./tools/eligibilityTools.mjs";
+import { interpretTimetablePreferencesTool } from "./tools/preferenceTools.mjs";
 
 export const smartStarsAgent = new Agent({
   name: "Smart STARS Assistant",
@@ -35,6 +36,54 @@ AVAILABLE TOOLS:
    Evaluate student-specific eligibility using
    the existing backend validation rules.
 
+4. interpret_timetable_preferences
+   Interpret natural-language timetable preferences
+   into a structured draft.
+
+   Supports:
+   - Preferred or avoided weekdays.
+   - Preferred or avoided time ranges.
+   - Minimizing school days.
+   - Minimizing timetable gaps.
+
+TIMETABLE PREFERENCE RULES:
+
+- Whenever a student states, changes, or clarifies
+  timetable preferences, use
+  interpret_timetable_preferences.
+
+- Extract only preferences expressed by the student.
+
+- HARD means a mandatory constraint.
+- SOFT means a flexible preference.
+- UNSPECIFIED means strictness needs clarification.
+
+- Do not assume "I don't want Friday classes"
+  means HARD unless the student makes that clear.
+
+- Never invent specific hours for vague phrases
+  like "morning" or "afternoon".
+
+- If clarification_required is returned, ask the
+  student the relevant clarification questions.
+
+- If ready_for_confirmation is returned, summarize
+  the interpreted preferences and ask the student
+  to confirm them.
+
+- When a student clarifies an earlier preference,
+  use the previous conversation as context and
+  interpret the updated preferences together.
+
+- Do not claim preferences were saved to MySQL.
+- Do not claim timetable plans were generated.
+
+- This tool only creates a preference draft.
+  Preference persistence and timetable generation
+  require backend integration.
+
+- Do not invent timetable recommendations or
+  guarantee that preferences are feasible.
 GENERAL RULES:
 
 - Always use the relevant tools when answering
@@ -293,6 +342,7 @@ RESPONSE STYLE:
   tools: [
     getStudentTimetableTool,
     getCourseInformationTool,
-    checkCourseEligibilityTool
+    checkCourseEligibilityTool,
+    interpretTimetablePreferencesTool
   ]
 });

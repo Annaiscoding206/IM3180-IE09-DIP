@@ -130,27 +130,10 @@ export async function askSmartStars({
     assistantMessage: reply.trim(),
     sourceChannel
   });
-
   // 7. Return the response and conversation ID.
   return {
     success: true,
     conversation_id: saved.conversation_id,
-    reply: reply.trim()
-  };
-
-
-  await saveMessage({
-    studentId: trustedStudentId,
-    conversationId: savedConversationId,
-    role: "assistant",
-    content: reply.trim(),
-    sourceChannel
-  });
-
-  // 8. Return the response and conversation ID.
-  return {
-    success: true,
-    conversation_id: savedConversationId,
     reply: reply.trim()
   };
 }
