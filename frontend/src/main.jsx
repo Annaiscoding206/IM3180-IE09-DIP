@@ -5,6 +5,7 @@ import Planner, { forgetStoredCourseLocks } from "./Planner";
 import ReasonDialog from "./ReasonDialog";
 import { courseProblem } from "./reasonUtils";
 import "./styles.css";
+import ChatWidget from "./components/ChatWidget";
 
 const STUDENT_ID = "DEMO001";
 
@@ -1062,6 +1063,9 @@ function App() {
         problem={reasonProblem}
         onClose={() => setReasonProblem(null)}
       />
+
+      {/* Smart STARS AI Assistant */}
+      <ChatWidget />
     </div>
   );
 }

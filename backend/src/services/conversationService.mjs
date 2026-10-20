@@ -350,3 +350,106 @@ export async function saveConversationTurn({
     connection.release();
   }
 }
+
+/**
+ * Retrieve the active conversation for a student.
+ *
+ * Returns:
+ * - conversation ID if one exists
+ * - null if no active conversation has been selected
+ */
+export async function getActiveConversationId({ studentId }) {
+  validateStudentId(studentId);
+
+  const [rows] = await pool.query(
+    `SELECT ac.conversation_id
+     FROM ai_active_conversation ac
+     INNER JOIN ai_conversation c
+       ON ac.conversation_id = c.conversation_id
+       AND ac.student_id = c.student_id
+     WHERE ac.student_id = ?
+     LIMIT 1`,
+    [studentId]
+  );
+
+  if (rows.length === 0) {
+    return null;
+  }
+
+  const conversationId = Number(rows[0].conversation_id);
+
+  if (!Number.isSafeInteger(conversationId)) {
+    throw new Error("Invalid stored conversation ID.");
+  }
+
+  return conversationId;
+}
+
+/**
+ * Save or update a student's active conversation.
+ *
+ * The conversation must belong to the student.
+ * Creates the active record if it does not exist.
+ * Updates the record if one already exists.
+ */
+export async function setActiveConversationId({
+  studentId,
+  conversationId
+}) {
+  validateStudentId(studentId);
+
+  if (
+    !Number.isSafeInteger(conversationId) ||
+    conversationId <= 0
+  ) {
+    throw new Error("Invalid conversation ID.");
+  }
+
+  const connection = await pool.getConnection();
+
+  try {
+    await connection.beginTransaction();
+
+    // Verify that this conversation belongs to the student.
+    const [rows] = await connection.query(
+      `SELECT conversation_id
+       FROM ai_conversation
+       WHERE conversation_id = ?
+         AND student_id = ?
+       FOR UPDATE`,
+      [conversationId, studentId]
+    );
+
+    if (rows.length === 0) {
+      throw new Error(
+        "Conversation not found for this student."
+      );
+    }
+
+    // Insert or update the active conversation.
+    await connection.query(
+      `INSERT INTO ai_active_conversation
+         (student_id, conversation_id)
+       VALUES (?, ?)
+       ON DUPLICATE KEY UPDATE
+         conversation_id = ?,
+         updated_at = CURRENT_TIMESTAMP`,
+      [studentId, conversationId, conversationId]
+    );
+
+    await connection.commit();
+
+    return {
+      success: true,
+      student_id: studentId,
+      conversation_id: conversationId
+    };
+
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+
+  } finally {
+    connection.release();
+  }
+}

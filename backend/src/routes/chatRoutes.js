@@ -7,14 +7,15 @@ const {
 
 const {
   getChatConversations,
-  getChatMessages
+  getChatMessages,
+  getActiveChat
 } = require("../controllers/chatHistoryController");
 
 const router = express.Router();
 
 // Send message to AI.
 router.post("/", sendChatMessage);
-
+router.get("/active", getActiveChat);
 // Retrieve authenticated student's conversations.
 router.get("/conversations", getChatConversations);
 

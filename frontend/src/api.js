@@ -98,4 +98,13 @@ export const api = {
   removeIndex: (planId, code) => json("DELETE", `/plans/${planId}/indexes/${encodeURIComponent(code)}`).then((body) => body.data),
   validatePlan: (planId) => request(`/plans/${planId}/validation`).then((body) => body.data),
   selectPlan: (planId) => json("POST", `/plans/${planId}/select`).then((body) => body.data),
+  // AI Chatbot — general academic questions.
+  // Student identity is never supplied by the browser.
+  askChat: (message) =>
+    json("POST", "/chat", { message }),
+  // Leo Assistant — retrieve the active conversation
+  // and messages shared between website and Telegram.
+  getActiveChat: () =>
+    request("/chat/active"),
+
 };

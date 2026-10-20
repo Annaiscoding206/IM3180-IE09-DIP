@@ -104,7 +104,80 @@ const getChatMessages = async (req, res) => {
   }
 };
 
+
+/**
+ * GET /api/chat/active
+ *
+ * Return the active conversation and its recent messages
+ * for the student identified by trusted backend context.
+ */
+const getActiveChat = async (req, res) => {
+  const studentId = getStudentId(res);
+
+  if (!studentId) {
+    return res.status(401).json({
+      success: false,
+      message: "Student identity is required."
+    });
+  }
+
+  try {
+    const {
+      getActiveConversationId,
+      getConversationMessages
+    } = await import(
+      "../services/conversationService.mjs"
+    );
+
+    const conversationId =
+      await getActiveConversationId({ studentId });
+
+    // No active conversation selected yet.
+    if (conversationId === null) {
+      return res.status(200).json({
+        success: true,
+        conversation_id: null,
+        count: 0,
+        data: []
+      });
+    }
+
+    // Retrieve messages after verifying ownership.
+    const messages = await getConversationMessages({
+      studentId,
+      conversationId,
+      limit: 30
+    });
+
+    if (messages === null) {
+      return res.status(404).json({
+        success: false,
+        message: "Conversation not found."
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      conversation_id: conversationId,
+      count: messages.length,
+      data: messages
+    });
+
+  } catch (error) {
+    console.error(
+      "Active conversation retrieval error:",
+      error
+    );
+
+    return res.status(503).json({
+      success: false,
+      message: "Unable to load active conversation."
+    });
+  }
+};
+
 module.exports = {
   getChatConversations,
-  getChatMessages
+  getChatMessages,
+  getActiveChat
 };

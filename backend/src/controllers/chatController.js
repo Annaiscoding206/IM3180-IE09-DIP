@@ -63,22 +63,52 @@ const sendChatMessage = async (req, res) => {
   }
 
   try {
-    // 5. Import the existing AI Chat Service.
     const { askSmartStars } = await import(
       "../services/chatService.mjs"
     );
 
-    // 6. Run the agent with optional conversation history.
+    // Enable shared memory only for the local demo.
+    const isLocalDemo =
+      res.locals.isLocalDemoChat === true &&
+      studentId === "DEMO001";
+
+    let activeService = null;
+    let effectiveConversationId = conversationId;
+
+    if (isLocalDemo) {
+      activeService = await import(
+        "../services/conversationService.mjs"
+      );
+
+      // Retrieve the active conversation shared with Telegram.
+      if (effectiveConversationId === null) {
+        effectiveConversationId =
+          await activeService.getActiveConversationId({
+            studentId
+          });
+      }
+    }
+
+    // Ask Leo using the previous conversation context.
     const result = await askSmartStars({
       message,
       studentId,
-      conversationId,
+      conversationId: effectiveConversationId,
       sourceChannel: "website"
     });
+
+    // Save the active conversation for both platforms.
+    if (isLocalDemo) {
+      await activeService.setActiveConversationId({
+        studentId,
+        conversationId: result.conversation_id
+      });
+    }
 
     return res.status(200).json(result);
 
   } catch (error) {
+
     // Do not disclose whether another student
     // owns a requested conversation.
     if (

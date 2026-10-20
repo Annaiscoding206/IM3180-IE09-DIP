@@ -17,3 +17,7 @@ Thumbs.db
 
 # VS Code local settings
 .vscode/
+
+# Leo Assistant - local Telegram polling checkpoint
+/backend/.telegram-update-offset.json
+/backend/.telegram-update-offset.json.tmp
