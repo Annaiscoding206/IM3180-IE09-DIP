@@ -3,6 +3,7 @@ const { checkClashes } = require("./clashService");
 const { readPreferenceSnapshot, checkHardConstraints } = require("./hardConstraintService");
 const { searchTimetables, SEARCH_LIMITS } = require("./timetableSearchService");
 const { rankPlans } = require("./planRankingService");
+const { explainGeneration } = require("./planningExplanationService");
 
 const AUTO_NAME = /^AUTO Plan [ABC] #(\d+)$/;
 
@@ -38,7 +39,7 @@ async function generatePlans(requestId, studentId, body = {}) {
       throw new plans.PlanningError(limited ? 409 : 422,
         limited ? "Search limit reached without a plan; infeasibility is not proven" : "No feasible timetable satisfies the selected courses and constraints", {
           code: limited ? "SEARCH_LIMIT_REACHED" : "NO_FEASIBLE_PLAN", request_id: id, source_plan_id: sourceId,
-          plans: [], reasons: details, search,
+          plans: [], ...explainGeneration(details, search), search,
         });
     }
     if (!selected.length) noPlan([{ code: "NO_SELECTED_COURSES" }]);

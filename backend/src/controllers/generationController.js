@@ -1,6 +1,7 @@
 const { generatePlans } = require("../services/generationService");
 const { PlanningError } = require("../services/planningError");
 const { EligibilityNotFoundError } = require("../services/eligibilityService");
+const { explainReasons } = require("../services/planningExplanationService");
 
 async function generate(req, res) {
   try {
@@ -9,7 +10,8 @@ async function generate(req, res) {
   } catch (error) {
     if (error instanceof PlanningError) return res.status(error.status).json({ success: false, message: error.message, ...error.details });
     if (error instanceof EligibilityNotFoundError) return res.status(422).json({ success: false,
-      code: "NO_FEASIBLE_PLAN", plans: [], reasons: [{ code: "ACADEMIC_DATA_MISSING", message: error.message }] });
+      code: "NO_FEASIBLE_PLAN", plans: [], infeasibility_proven: false,
+      ...explainReasons([{ code: "ACADEMIC_DATA_MISSING", explanation: error.message, requires_review: true }]) });
     console.error("Plan generation failed:", error);
     return res.status(500).json({ success: false, message: "Plan generation failed; no changes saved" });
   }

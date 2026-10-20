@@ -17,6 +17,9 @@ const {
 } = require("../controllers/planController");
 
 const router = express.Router();
+const { planningIdentity } = require("../middleware/planningIdentity");
+const { getIndexAlternatives } = require("../controllers/alternativeIndexController");
+router.get("/:planId/indexes/:courseCode/alternatives", planningIdentity, getIndexAlternatives);
 
 router.get("/:planId", getPlan);
 router.get("/:planId/indexes", getPlanIndexes);

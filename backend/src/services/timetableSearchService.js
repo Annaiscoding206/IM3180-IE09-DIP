@@ -11,11 +11,22 @@ function searchTimetables(domains, limits = SEARCH_LIMITS) {
     a.indexes.length - b.indexes.length || a.course_code.localeCompare(b.course_code));
   const cache = new Map(), seen = new Set(), candidates = [];
   const stats = { visited_nodes: 0, clash_prunes: 0, forward_prunes: 0, candidates_found: 0,
-    exhaustive: true, limit_reason: null, ...limits };
+    exhaustive: true, limit_reason: null, observed_conflicts: [], conflict_evidence_truncated: false, ...limits };
   const key = index => `${index.course_code}/${index.index_no}`;
+  const lockedKeys = new Set(domains.filter(domain => domain.locked).flatMap(domain => domain.indexes.map(key)));
   function compatible(a, b) {
     const pair = [key(a), key(b)].sort().join("|");
-    if (!cache.has(pair)) cache.set(pair, checkClashes([a, b]).can_save);
+    if (!cache.has(pair)) {
+      const validation = checkClashes([a, b]);
+      cache.set(pair, validation.can_save);
+      // Bounded evidence from the actual pruning path, not a new search and
+      // not a proof that any single pair explains global infeasibility.
+      for (const conflict of validation.conflicts) {
+        if (stats.observed_conflicts.length < 20) stats.observed_conflicts.push({ ...conflict,
+          first_locked: lockedKeys.has(key(conflict.first)), second_locked: lockedKeys.has(key(conflict.second)) });
+        else stats.conflict_evidence_truncated = true;
+      }
+    }
     return cache.get(pair);
   }
   function visit(depth, chosen) {
@@ -31,6 +42,11 @@ function searchTimetables(domains, limits = SEARCH_LIMITS) {
     }
     for (const index of [...ordered[depth].indexes].sort((a, b) => a.index_no - b.index_no)) {
       if (!stats.exhaustive) break;
+      // Clash-pruned branches continue below, so enforce the budget before
+      // every attempt as well as before recursion.
+      if (stats.visited_nodes >= limits.max_nodes) {
+        stats.exhaustive = false; stats.limit_reason = "NODE_LIMIT"; break;
+      }
       stats.visited_nodes++;
       if (!chosen.every(other => compatible(index, other))) { stats.clash_prunes++; continue; }
       const next = [...chosen, index];

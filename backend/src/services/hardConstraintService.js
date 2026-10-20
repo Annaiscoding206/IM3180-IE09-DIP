@@ -24,10 +24,11 @@ function checkHardConstraints(indexes, preferences) {
   // windows are not merged. AVOID and blocked rules apply in addition, never
   // weakened to satisfy PREFER. All rules apply across all teaching weeks.
   for (const slot of slots) {
-    if (allowedDays.length && !allowedDays.includes(slot.day_of_week)) violations.push({ code: "HARD_PREFER_DAY", slot });
-    if (days.some(p => p.preference_type === "AVOID" && p.day_of_week === slot.day_of_week)) violations.push({ code: "HARD_AVOID_DAY", slot });
+    if (allowedDays.length && !allowedDays.includes(slot.day_of_week)) violations.push({ code: "HARD_PREFER_DAY", slot, allowed_days: allowedDays });
+    const avoidedDay = days.find(p => p.preference_type === "AVOID" && p.day_of_week === slot.day_of_week);
+    if (avoidedDay) violations.push({ code: "HARD_AVOID_DAY", slot, rule: avoidedDay });
     if (allowedTimes.length && !allowedTimes.some(p => slot.start_time >= p.start_time && slot.end_time <= p.end_time)) {
-      violations.push({ code: "HARD_PREFER_TIME", slot });
+      violations.push({ code: "HARD_PREFER_TIME", slot, allowed_windows: allowedTimes });
     }
     for (const rule of times.filter(p => p.preference_type === "AVOID")) {
       if (slot.start_time < rule.end_time && rule.start_time < slot.end_time) violations.push({ code: "HARD_AVOID_TIME", slot, rule });
