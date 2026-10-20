@@ -1,4 +1,13 @@
 const pool = require("../config/db");
+const { getCompletionSummary } = require("../services/degreeAuditService");
+
+async function completionAnnotation(res) {
+  const student = res.locals?.authenticatedStudentId;
+  if (!student) return course => course;
+  const completed = new Set((await getCompletionSummary(student)).passed_course_codes);
+  return course => ({ ...course, is_completed: completed.has(course.course_code.toUpperCase()),
+    completion_status: completed.has(course.course_code.toUpperCase()) ? "Completed" : "Not completed" });
+}
 
 class CourseInputError extends Error {}
 function withCourseTypes(course) {
@@ -118,11 +127,12 @@ if (conditions.length > 0) {
     sql += ` ORDER BY course_code`;
 
     const [courses] = await pool.query(sql, params);
+    const annotate = await completionAnnotation(res);
 
     res.status(200).json({
       success: true,
       count: courses.length,
-      data: courses.map(withCourseTypes),
+      data: courses.map(withCourseTypes).map(annotate),
     });
   } catch (error) {
     if (error instanceof CourseInputError) {
@@ -192,10 +202,11 @@ const getCourseByCode = async (req, res) => {
     [courseCode]
     );
 
+    const annotate = await completionAnnotation(res);
     res.status(200).json({
       success: true,
       data: {
-        ...withCourseTypes(courses[0]),
+        ...annotate(withCourseTypes(courses[0])),
         indexes: indexes
       }
     });

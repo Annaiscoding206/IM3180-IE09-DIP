@@ -8,6 +8,8 @@ function academicReasons(eligibility) {
   const reasons = [];
   for (const course of eligibility?.courses || []) {
     const base = { course_code: course.course_code, index_change_can_resolve: false };
+    if (course.already_completed) reasons.push({ ...base, code: "COURSE_ALREADY_COMPLETED",
+      explanation: "This course has a passed academic record and cannot be selected again." });
     if (!course.prerequisite_eligible || course.programme_eligible !== true) reasons.push({ ...base, code: "COURSE_INELIGIBLE",
       prerequisite_eligible: course.prerequisite_eligible, programme_eligible: course.programme_eligible,
       requires_review: course.requires_review, missing_prerequisite_groups: course.missing_prerequisite_groups,
@@ -123,6 +125,8 @@ function explainReasons(input) {
         suggest(reason, "REVIEW_TERM_SELECTION", "Review the request term and course/index availability."); break;
       case "COURSE_INELIGIBLE":
         suggest(reason, "REVIEW_COURSE_ELIGIBILITY", "Resolve the academic requirement or choose an eligible course; another index does not remove this restriction."); break;
+      case "COURSE_ALREADY_COMPLETED":
+        suggest(reason, "REVIEW_SELECTED_COURSES", "Remove the already completed course from the plan and request; its academic history remains unchanged."); break;
     }
   }
   return { reasons, suggestions };

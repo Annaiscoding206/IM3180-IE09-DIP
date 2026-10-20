@@ -8,6 +8,7 @@ const {
 } = require("../controllers/courseController");
 
 const router = express.Router();
+router.use(require("../middleware/planningIdentity").optionalPlanningIdentity);
 
 // GET /api/courses
 router.get("/", getCourses);

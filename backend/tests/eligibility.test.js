@@ -93,7 +93,8 @@ function setup(change = () => {}) {
           row.requirement_type === type
         )];
       }
-      if (/FROM completed_course\b/.test(sql)) return [data.completed.filter((row) => same(row.student_id, params[0]))];
+      if (/FROM academic_record\b/.test(sql)) return [data.completed.filter((row) => same(row.student_id, params[0]))
+        .map(row => ({ ...row, result: row.result || "PASSED", earned_au: row.earned_au ?? null }))];
       if (/FROM programme_restriction\b/.test(sql)) {
         assert.equal(params.length, 1, "Read every programme rule, not just matching allowlist entries");
         return [data.restrictions.filter((row) => same(row.course_code, params[0]))];
@@ -156,6 +157,7 @@ function setup(change = () => {}) {
       "../config/db": db,
       "./corequisiteService": require("../src/services/corequisiteService"),
       "./mutualExclusionService": require("../src/services/mutualExclusionService"),
+      "./degreeAuditService": require("../src/services/degreeAuditService"),
     }
   );
   const planService = loadModule("backend/src/services/planService.js", {
@@ -164,7 +166,8 @@ function setup(change = () => {}) {
     "./planningError": require("../src/services/planningError"),
     "./hardConstraintService": require("../src/services/hardConstraintService"),
   });
-  const dependencies = { "../config/db": db, "../services/eligibilityService": service, "../services/planService": planService };
+  const dependencies = { "../config/db": db, "../services/eligibilityService": service, "../services/planService": planService,
+    "../services/degreeAuditService": require("../src/services/degreeAuditService") };
   const student = loadModule("backend/src/controllers/studentController.js", dependencies);
   const plan = loadModule("backend/src/controllers/planController.js", dependencies);
   async function invoke(handler, req) {
@@ -217,10 +220,12 @@ test("DEMO001 satisfies SC5002 prerequisites but is rejected for IEM", async () 
   assert.match(body.message, /not available to your programme/);
 });
 
-test("no prerequisites is prerequisite eligible", async () => {
+test("no prerequisites is prerequisite eligible but an already passed course cannot be selected", async () => {
   const { body } = await setup().check("MH1810");
   assert.equal(body.prerequisite_eligible, true);
-  assert.equal(body.eligible, true);
+  assert.equal(body.already_completed, true);
+  assert.equal(body.can_select, false);
+  assert.equal(body.eligible, false);
 });
 
 test("no prerequisites does not bypass programme restrictions", async () => {
@@ -303,7 +308,10 @@ test("one OR option per group satisfies multiple AND groups", async () => {
 });
 
 test("ONLY_AVAILABLE allows any listed programme and rejects others", async () => {
-  const app = setup((data) => data.restrictions = [rule("ONLY_AVAILABLE", "EEE"), rule("ONLY_AVAILABLE", "IEM")]);
+  const app = setup((data) => {
+    data.completed = []; // Isolate programme eligibility from the completed-course guard.
+    data.restrictions = [rule("ONLY_AVAILABLE", "EEE"), rule("ONLY_AVAILABLE", "IEM")];
+  });
   assert.equal((await app.check("MH1810")).body.eligible, true);
   app.data.students[0].programme = "ADMC";
   const { body } = await app.check("MH1810");
@@ -332,7 +340,10 @@ test("seeded IE4758 cohort rule is unknown and POST is blocked, not guessed", as
 });
 
 test("cohort NOT_AVAILABLE for another programme does not block", async () => {
-  const app = setup((data) => data.restrictions = [rule("NOT_AVAILABLE", "EEE", "2020")]);
+  const app = setup((data) => {
+    data.completed = [];
+    data.restrictions = [rule("NOT_AVAILABLE", "EEE", "2020")];
+  });
   const { body } = await app.check("MH1810");
   assert.equal(body.eligible, true);
   assert.deepEqual(body.unresolved_restrictions, []);

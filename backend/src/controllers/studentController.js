@@ -1,5 +1,6 @@
 const pool = require("../config/db");
 const { evaluateEligibility, EligibilityNotFoundError } = require("../services/eligibilityService");
+const { getCompletionSummary } = require("../services/degreeAuditService");
 
 // GET /api/students
 const getAllStudents = async (req, res) => {
@@ -57,21 +58,14 @@ const getStudentById = async (req, res) => {
       });
     }
 
-    const [completedCourses] = await pool.query(
-      `
-      SELECT course_code
-      FROM completed_course
-      WHERE student_id = ?
-      ORDER BY course_code
-      `,
-      [studentId]
-    );
+    const audit = await getCompletionSummary(studentId);
 
     res.status(200).json({
       success: true,
       data: {
         ...students[0],
-        completed_courses: completedCourses.map((row) => row.course_code),
+        completed_courses: audit.passed_course_codes,
+        degree_audit_summary: audit,
       },
     });
   } catch (error) {

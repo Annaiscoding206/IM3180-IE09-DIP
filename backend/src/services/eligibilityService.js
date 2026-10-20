@@ -1,6 +1,7 @@
 const pool = require("../config/db");
 const { checkCorequisites } = require("./corequisiteService");
 const { checkMutualExclusions } = require("./mutualExclusionService");
+const { getCompletionSummary } = require("./degreeAuditService");
 
 
 class EligibilityNotFoundError extends Error {
@@ -59,10 +60,7 @@ const evaluateEligibility = async (
    ORDER BY requirement_group, required_course_code`,
   [course.course_code]
   );
-  const [completedCourses] = await db.query(
-    `SELECT course_code FROM completed_course WHERE student_id = ?`,
-    [student.student_id]
-  );
+  const completion = await getCompletionSummary(student.student_id, db);
   const [restrictions] = await db.query(
     `SELECT programme, cohort, restriction_type
      FROM programme_restriction WHERE course_code = ?
@@ -71,8 +69,9 @@ const evaluateEligibility = async (
   );
 
   const completed = new Set(
-    completedCourses.map((row) => normalizeCode(row.course_code))
+    completion.passed_course_codes.map(normalizeCode)
   );
+  const alreadyCompleted = completed.has(normalizeCode(course.course_code));
   let selectedCourseCodes = [];
 
   if (planCourseCodes !== null) {
@@ -157,6 +156,7 @@ const mutualExclusionResult = checkMutualExclusions(
 
   let programmeEligible = true;
   const reasons = [];
+  if (alreadyCompleted) reasons.push("Course has already been passed and cannot be selected again");
   if (mutualExclusionResult.conflicting_completed_courses.length > 0) {
   reasons.push(
     `Mutually exclusive with completed courses: ${
@@ -196,6 +196,7 @@ if (mutualExclusionResult.conflicting_selected_courses.length > 0) {
   return {
     student_id: student.student_id,
     course_code: course.course_code,
+    already_completed: alreadyCompleted,
     request_id: requestId,
     corequisite_context:
       planCourseCodes !== null
@@ -215,10 +216,12 @@ if (mutualExclusionResult.conflicting_selected_courses.length > 0) {
     conflicting_selected_courses:
       mutualExclusionResult.conflicting_selected_courses,
     can_select:
+      !alreadyCompleted &&
       prerequisiteEligible &&
       programmeEligible === true &&
       mutualExclusionResult.mutual_exclusion_eligible,
     eligible:
+      !alreadyCompleted &&
       prerequisiteEligible &&
       corequisiteResult.corequisite_eligible &&
       programmeEligible === true &&

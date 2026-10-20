@@ -5,6 +5,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 function setup(query) {
   const sandbox = { module: { exports: {} }, console: { error() {} }, require(name) {
+    if (name === '../services/degreeAuditService') return require('../src/services/degreeAuditService');
     assert.equal(name, '../config/db'); return { query };
   }};
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../src/controllers/courseController.js'), 'utf8'), sandbox);

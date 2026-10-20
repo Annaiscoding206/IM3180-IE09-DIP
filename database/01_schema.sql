@@ -186,6 +186,37 @@ CREATE TABLE completed_course (
 
 
 -- ============================================================
+-- 4A. AUTHORITATIVE ACADEMIC ATTEMPTS
+-- ============================================================
+-- completed_course above is retained as legacy history only.
+-- Run 08_degree_audit.sql after legacy demo seed 03 to import those pairs.
+-- Unknown historical metadata stays NULL; no course_info FK is intentional.
+
+CREATE TABLE academic_record (
+    record_id INT AUTO_INCREMENT PRIMARY KEY,
+    student_id VARCHAR(15) NOT NULL,
+    course_code VARCHAR(10) NOT NULL,
+    course_title VARCHAR(255) NULL,
+    academic_year VARCHAR(20) NULL,
+    semester INT NULL,
+    result ENUM('PASSED', 'FAILED', 'IN_PROGRESS') NOT NULL,
+    grade VARCHAR(10) NULL,
+    earned_au DECIMAL(6,2) NULL,
+    source ENUM('LEGACY_COMPLETED', 'DEMO') NOT NULL,
+    source_key VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_academic_record_student FOREIGN KEY (student_id)
+        REFERENCES student(student_id) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT chk_academic_record_semester CHECK (semester IS NULL OR semester BETWEEN 1 AND 3),
+    CONSTRAINT chk_academic_record_au CHECK (earned_au IS NULL OR earned_au >= 0),
+    CONSTRAINT chk_academic_record_nonpass_au CHECK (result = 'PASSED' OR (earned_au IS NOT NULL AND earned_au = 0)),
+    UNIQUE KEY uq_academic_record_source (student_id, source_key),
+    INDEX idx_academic_record_course (student_id, course_code, result)
+);
+
+
+-- ============================================================
 -- 5. COURSE REQUIREMENTS
 -- ============================================================
 -- Stores prerequisite/corequisite rules in structured form.

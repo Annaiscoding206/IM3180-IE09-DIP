@@ -7,6 +7,8 @@ const {
 } = require("../controllers/studentController");
 
 const router = express.Router();
+const { planningIdentity } = require("../middleware/planningIdentity");
+router.get("/:studentId/degree-audit", planningIdentity, require("../controllers/degreeAuditController").getStudentDegreeAudit);
 
 // GET /api/students
 router.get("/", getAllStudents);
