@@ -67,7 +67,8 @@ test("preference persistence against local MySQL and HTTP", { skip: process.env.
   async function invalidated() {
     const rows = await metadata();
     assert.equal(rows.length, 2, "Plans retained");
-    assert.ok(rows.every(row => row.rank_no === null && row.match_score === null));
+    assert.equal(rows[0].rank_no, null); assert.equal(rows[0].match_score, null);
+    assert.equal(rows[1].rank_no, 1); assert.equal(Number(rows[1].match_score), 95);
     assert.equal(rows[0].status, "GENERATED");
     assert.equal(rows[1].status, "ARCHIVED");
     assert.equal((await metadata(foreign))[0].rank_no, 1, "Other requests untouched");

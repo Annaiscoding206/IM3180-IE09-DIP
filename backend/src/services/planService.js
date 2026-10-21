@@ -1,7 +1,8 @@
 const pool = require("../config/db");
-const { evaluateEligibility } = require("./eligibilityService");
+const { evaluateEligibility, EligibilityNotFoundError } = require("./eligibilityService");
 const { checkClashes } = require("./clashService");
 const { PlanningError } = require("./planningError");
+const { invalidateRequestPlans, invalidatePlan } = require("./planInvalidationService");
 const { readPreferenceSnapshot, checkHardConstraints } = require("./hardConstraintService");
 
 function integer(value, name, max = 2147483647) {
@@ -187,11 +188,29 @@ async function getClashes(planId) {
   return validateTimetable(plan.plan_id, await readIndexes(plan.plan_id, pool), pool);
 }
 
+// Partial manual plans may still lack corequisites/indexes. Every included
+// course must be selectable and every supplied index must satisfy full schedule,
+// term and hard constraints. Finalization additionally requires completeness.
+async function validateIndexEdit(plan, candidate, indexes, db) {
+  const validation = await validatePlanContents(plan, indexes, db);
+  return { ...validation.timetable, candidate, can_save: validation.can_save,
+    can_finalize: validation.can_finalize, eligibility: validation.eligibility,
+    constraints: validation.constraints, invalid_term_indexes: validation.invalid_term_indexes,
+    validation_scope: "incremental_plan" };
+}
+
+function requireEditable(plan) {
+  if (plan.status === "ARCHIVED") throw new PlanningError(409, "Archived plans cannot be edited or selected");
+}
+
 async function previewIndex(planId, body = {}) {
-  const plan = await getPlan(planId);
-  const candidate = await validateCandidate(plan, body.course_code, body.index_no, pool, false);
-  const indexes = withoutCourse(await readIndexes(plan.plan_id, pool), candidate.course_code);
-  return validateTimetable(plan.plan_id, [...indexes, candidate], pool, candidate);
+  return transaction(async db => {
+    const plan = await getPlan(planId, db, true);
+    requireEditable(plan);
+    const candidate = await validateCandidate(plan, body.course_code, body.index_no, db, false);
+    const indexes = withoutCourse(await readIndexes(plan.plan_id, db), candidate.course_code);
+    return validateIndexEdit(plan, candidate, [...indexes, candidate], db);
+  });
 }
 
 async function transaction(action) {
@@ -217,12 +236,13 @@ async function putIndex(planId, courseCode, body = {}) {
     // Every index writer locks the parent before reading indexes. Concurrent
     // writes to the same plan cannot both validate against the old timetable.
     const plan = await getPlan(planId, db, true);
+    requireEditable(plan);
     const candidate = await validateCandidate(plan, courseCode, body.index_no, db, true);
     const current = await readIndexes(plan.plan_id, db);
     const remaining = withoutCourse(current, candidate.course_code);
-    const validation = await validateTimetable(plan.plan_id, [...remaining, candidate], db, candidate);
+    const validation = await validateIndexEdit(plan, candidate, [...remaining, candidate], db);
     if (!validation.can_save) {
-      throw new PlanningError(422, "Index cannot be saved: timetable validation failed", { validation });
+      throw new PlanningError(422, "Index cannot be saved: planning validation failed", { validation });
     }
     const created = remaining.length === current.length;
     if (created) {
@@ -233,18 +253,7 @@ async function putIndex(planId, courseCode, body = {}) {
       await db.query("UPDATE plan_course SET index_no = ? WHERE plan_id = ? AND course_code = ?",
         [candidate.index_no, plan.plan_id, candidate.course_code]);
     }
-      await db.query(
-      `UPDATE plan
-       SET rank_no = NULL,
-           match_score = NULL,
-           status = CASE
-             WHEN status = 'SELECTED' THEN 'GENERATED'
-             ELSE status
-           END,
-           updated_at = CURRENT_TIMESTAMP
-       WHERE plan_id = ?`,
-      [plan.plan_id]
-    );
+    await invalidatePlan(db, plan.plan_id);
     return { created, plan_id: plan.plan_id, ...candidate, validation };
   });
 }
@@ -253,27 +262,17 @@ async function removeIndex(planId, courseCode) {
   const code = text(courseCode, "course_code", 10).toUpperCase();
   return transaction(async (db) => {
     const plan = await getPlan(planId, db, true);
+    requireEditable(plan);
     const [result] = await db.query("DELETE FROM plan_course WHERE plan_id = ? AND course_code = ?", [plan.plan_id, code]);
     if (!result.affectedRows) throw new PlanningError(404, "Chosen course index not found");
-      await db.query(
-      `UPDATE plan
-       SET rank_no = NULL,
-           match_score = NULL,
-           status = CASE
-             WHEN status = 'SELECTED' THEN 'GENERATED'
-             ELSE status
-           END,
-           updated_at = CURRENT_TIMESTAMP
-       WHERE plan_id = ?`,
-      [plan.plan_id]
-    );
+    await invalidatePlan(db, plan.plan_id);
     return { plan_id: plan.plan_id, course_code: code };
   });
 }
 async function getPlanEligibility(planId, db = pool) {
-  const plan = await getPlan(planId, db);
-  const indexes = await readIndexes(plan.plan_id, db);
-  return evaluatePlanAcademics(plan, indexes, db);
+  if (db === pool) return transaction(connection => getPlanEligibility(planId, connection));
+  const plan = await getPlan(planId, db, true);
+  return evaluatePlanAcademics(plan, await readIndexes(plan.plan_id, db), db);
 }
 
 async function evaluatePlanAcademics(plan, indexes, db) {
@@ -308,13 +307,18 @@ async function evaluatePlanAcademics(plan, indexes, db) {
   const courseResults = [];
 
   for (const courseCode of planCourseCodes) {
-    const result = await evaluateEligibility(
+    let result;
+    try { result = await evaluateEligibility(
       plan.student_id,
       courseCode,
       db,
       plan.request_id,
       planCourseCodes
-    );
+    ); } catch (error) {
+      if (!(error instanceof EligibilityNotFoundError)) throw error;
+      result = { course_code: courseCode, eligible: false, can_select: false,
+        requires_review: true, code: "ACADEMIC_DATA_MISSING", message: error.message };
+    }
 
     courseResults.push(result);
   }
@@ -357,7 +361,7 @@ async function addCourseToRequest(requestId, courseCode) {
   return transaction(async (db) => {
     // Add operations for the same request must run one at a time.
     const [requests] = await db.query(
-      `SELECT request_id, student_id
+      `SELECT request_id, student_id, academic_year, semester
        FROM planning_request
        WHERE request_id = ?
        FOR UPDATE`,
@@ -393,24 +397,18 @@ async function addCourseToRequest(requestId, courseCode) {
       throw new PlanningError(422, eligibility.message, eligibility);
     }
 
+    const [offerings] = await db.query(
+      "SELECT course_code FROM course_info WHERE course_code = ? AND academic_year = ? AND semester = ? LIMIT 1",
+      [code, requests[0].academic_year, requests[0].semester]
+    );
+    if (!offerings.length) throw new PlanningError(422, "Course is not offered in the planning request term");
+
     await db.query(
       `INSERT INTO planning_request_course (request_id, course_code)
        VALUES (?, ?)`,
       [id, code]
     );
-
-    await db.query(
-      `UPDATE plan
-       SET rank_no = NULL,
-           match_score = NULL,
-           status = CASE
-             WHEN status = 'SELECTED' THEN 'GENERATED'
-             ELSE status
-           END,
-           updated_at = CURRENT_TIMESTAMP
-       WHERE request_id = ?`,
-      [id]
-    );
+    await invalidateRequestPlans(db, id);
 
     return {
       request_id: id,
@@ -451,7 +449,7 @@ async function removeCourseFromRequest(requestId, courseCode) {
       `SELECT p.plan_id, p.plan_name
        FROM plan p
        JOIN plan_course pc ON pc.plan_id = p.plan_id
-       WHERE p.request_id = ? AND pc.course_code = ?
+       WHERE p.request_id = ? AND pc.course_code = ? AND p.status <> 'ARCHIVED'
        ORDER BY p.plan_id`,
       [id, code]
     );
@@ -473,19 +471,7 @@ async function removeCourseFromRequest(requestId, courseCode) {
     if (result.affectedRows === 0) {
       throw new PlanningError(404, "Selected course not found");
     }
-
-      await db.query(
-      `UPDATE plan
-       SET rank_no = NULL,
-           match_score = NULL,
-           status = CASE
-             WHEN status = 'SELECTED' THEN 'GENERATED'
-             ELSE status
-           END,
-           updated_at = CURRENT_TIMESTAMP
-       WHERE request_id = ?`,
-      [id]
-    );
+    await invalidateRequestPlans(db, id);
 
     return { request_id: id, course_code: code };
   });
@@ -498,7 +484,9 @@ async function getPlanValidation(planId, db = null) {
     );
   }
   const plan = await getPlan(planId, db, true);
-  return validatePlanContents(plan, await readIndexes(plan.plan_id, db), db);
+  const validation = await validatePlanContents(plan, await readIndexes(plan.plan_id, db), db);
+  return { ...validation, archived: plan.status === "ARCHIVED",
+    can_save: plan.status !== "ARCHIVED" && validation.can_save, can_finalize: plan.status !== "ARCHIVED" && validation.can_finalize };
 }
 
 // Shared by final selection and generation BEFORE inserting generated plan rows.
@@ -521,6 +509,8 @@ async function validatePlanContents(plan, indexes, db) {
   return {
     plan_id: plan.plan_id ?? null,
     request_id: plan.request_id,
+    can_save: eligibility.courses.length > 0 && eligibility.unselected_courses.length === 0 &&
+      eligibility.courses.every(course => course.can_select) && timetable.can_save && invalidIndexes.length === 0 && constraints.valid,
     can_finalize: eligibility.eligible && timetable.can_save && invalidIndexes.length === 0 && constraints.valid,
     requires_review: eligibility.requires_review,
     invalid_term_indexes: invalidIndexes,
@@ -532,6 +522,7 @@ async function validatePlanContents(plan, indexes, db) {
 
 async function selectPlan(planId) {
   return transaction(async (db) => {
+    requireEditable(await getPlan(planId, db, true));
     const validation = await getPlanValidation(planId, db);
 
     if (!validation.can_finalize) {
@@ -568,9 +559,39 @@ async function selectPlan(planId) {
   });
 }
 
+// Public retrieval never treats a stored SELECTED label as proof of validity.
+// This is read-only: expose stored_status and an effective status/selection state
+// for stale external edits, without silently changing persisted historical data.
+async function describePlan(plan, db) {
+  const validation = await validatePlanContents(plan, await readIndexes(plan.plan_id, db), db);
+  const archived = plan.status === "ARCHIVED";
+  validation.archived = archived;
+  validation.can_save = !archived && validation.can_save;
+  validation.can_finalize = !archived && validation.can_finalize;
+  const stale = plan.status === "SELECTED" && !validation.can_finalize;
+  return { ...plan, stored_status: plan.status, status: stale ? "GENERATED" : plan.status,
+    rank_no: stale ? null : plan.rank_no, match_score: stale ? null : plan.match_score,
+    selection_state: archived ? "ARCHIVED" : stale ? "STALE_INVALID" : plan.status === "SELECTED" ? "ACTIVE_VALID" : "NOT_SELECTED",
+    active_selection: plan.status === "SELECTED" && validation.can_finalize, validation };
+}
+async function getPlanDetails(planId) {
+  return transaction(async db => describePlan(await getPlan(planId, db, true), db));
+}
+async function listPlanDetails(requestId) {
+  const id = integer(requestId, "requestId");
+  return transaction(async db => {
+    const [requests] = await db.query("SELECT request_id FROM planning_request WHERE request_id = ? FOR UPDATE", [id]);
+    if (!requests.length) throw new PlanningError(404, "Planning request not found");
+    const [rows] = await db.query("SELECT plan_id FROM plan WHERE request_id = ? ORDER BY plan_id", [id]);
+    const result = [];
+    for (const row of rows) result.push(await describePlan(await getPlan(row.plan_id, db, true), db));
+    return result;
+  });
+}
+
 module.exports = {
   PlanningError, createRequest, listRequests, getRequest, createPlan, listPlans,
-  getPlan, getIndexes, getClashes, previewIndex, putIndex, removeIndex,
+  getPlan, getPlanDetails, listPlanDetails, getIndexes, getClashes, previewIndex, putIndex, removeIndex,
   getPlanEligibility, getPlanValidation, selectPlan,
   addCourseToRequest, removeCourseFromRequest,
   validatePlanContents, evaluatePlanAcademics, readSchedules, transaction, integer,

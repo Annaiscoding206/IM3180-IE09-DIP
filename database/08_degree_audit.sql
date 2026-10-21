@@ -55,7 +55,7 @@ UPDATE plan p JOIN planning_request pr ON pr.request_id = p.request_id
 SET p.rank_no = NULL, p.match_score = NULL,
     p.status = CASE WHEN p.status = 'SELECTED' THEN 'GENERATED' ELSE p.status END,
     p.updated_at = CURRENT_TIMESTAMP
-WHERE pr.student_id IN (SELECT student_id FROM degree_audit_legacy_import);
+WHERE pr.student_id IN (SELECT student_id FROM degree_audit_legacy_import) AND p.status <> 'ARCHIVED';
 UPDATE planning_request SET updated_at = CURRENT_TIMESTAMP
 WHERE student_id IN (SELECT student_id FROM degree_audit_legacy_import);
 

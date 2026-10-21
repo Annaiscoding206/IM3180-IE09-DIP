@@ -31,7 +31,7 @@ const seeded = {
     .map(([, course_code, programme, cohort, restriction_type]) => ({
       course_code, programme, cohort: cohort === "NULL" ? null : cohort.slice(1, -1), restriction_type,
     })),
-  requests: [{ request_id: "17", student_id: "DEMO001" }],
+  requests: [{ request_id: "17", student_id: "DEMO001", academic_year: "2026-2027", semester: 1 }],
   selected: [],
   exclusions: [],
 };
@@ -122,6 +122,7 @@ function setup(change = () => {}) {
         return [{ affectedRows: 1 }];
       }
 
+      if (/UPDATE planning_request\b/.test(sql)) return [{ affectedRows: 1 }];
       if (/UPDATE plan\b/.test(sql)) {
         return [{ affectedRows: 0 }];
       }
@@ -166,6 +167,7 @@ function setup(change = () => {}) {
     "./clashService": require("../src/services/clashService"),
     "./planningError": require("../src/services/planningError"),
     "./hardConstraintService": require("../src/services/hardConstraintService"),
+    "./planInvalidationService": require("../src/services/planInvalidationService"),
   });
   const dependencies = { "../config/db": db, "../services/eligibilityService": service, "../services/planService": planService,
     "../services/degreeAuditService": require("../src/services/degreeAuditService"),

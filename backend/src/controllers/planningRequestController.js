@@ -18,5 +18,5 @@ module.exports = {
   listPlanningRequests: handle((req) => plans.listRequests(req.query.student_id)),
   getPlanningRequest: handle((req) => plans.getRequest(req.params.requestId)),
   createPlan: handle((req) => plans.createPlan(req.params.requestId, req.body || {}), 201),
-  listPlans: handle((req) => plans.listPlans(req.params.requestId)),
+  listPlans: handle((req) => plans.listPlanDetails(req.params.requestId)),
 };

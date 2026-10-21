@@ -14,6 +14,7 @@ test("planning APIs against local MySQL and HTTP", { skip: process.env.RUN_MYSQL
   const express = require("express");
   const app = express();
   app.use(express.json());
+  app.use((req, res, next) => { res.locals.authenticatedStudentId = studentId; next(); });
   app.use("/api/planning-requests", require("../src/routes/planningRequestRoutes"));
   app.use("/api/plans", require("../src/routes/planRoutes"));
   app.use("/api/courses", require("../src/routes/courseRoutes"));

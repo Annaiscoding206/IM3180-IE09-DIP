@@ -213,6 +213,10 @@ test("Degree Audit authority, APIs and migration against MySQL/HTTP", { skip: pr
   });
   await t.test("migration retains legacy rows and imports unknown metadata without fabrication; rerun is a no-op", async () => {
     const legacyPlan = await chosen("C");
+    const archived = await plans.createPlan((await plans.getPlan(legacyPlan)).request_id, { plan_name: "Legacy archive" });
+    await plans.putIndex(archived.plan_id, code("C"), { index_no: 101 });
+    await pool.query("UPDATE plan SET status = 'ARCHIVED', rank_no = 2, match_score = 84 WHERE plan_id = ?", [archived.plan_id]);
+    const archiveBefore = await plans.getPlan(archived.plan_id);
     await pool.query("INSERT INTO completed_course (student_id, course_code) VALUES (?, ?), (?, ?)", [student, code("H"), student, code("C")]);
     const beforeLegacy = (await pool.query("SELECT * FROM completed_course ORDER BY student_id, course_code"))[0];
     const sql = fs.readFileSync(path.resolve(__dirname, "../../database/08_degree_audit.sql"), "utf8").replace(/--[^\n]*/g, "");
@@ -231,6 +235,7 @@ test("Degree Audit authority, APIs and migration against MySQL/HTTP", { skip: pr
       for (const key of ["course_title", "academic_year", "semester", "grade", "earned_au"]) assert.equal(row[key], null);
     }
     assert.equal((await plans.getPlan(legacyPlan)).status, "GENERATED");
+    assert.deepEqual(await plans.getPlan(archived.plan_id), archiveBefore, "Legacy migration preserves archived metadata");
     const auditBefore = await audit.readRecords(student), plansBefore = await planRows(student);
     await migrate();
     assert.deepEqual(await audit.readRecords(student), auditBefore);

@@ -199,7 +199,7 @@ module.exports = {
   addSelectedCourse,
   removeSelectedCourse,
   getPlanTimetable,
-  getPlan: handlePlan((req) => plans.getPlan(req.params.planId)),
+  getPlan: handlePlan((req) => plans.getPlanDetails(req.params.planId)),
   getPlanIndexes: handlePlan((req) => plans.getIndexes(req.params.planId)),
   putPlanIndex: handlePlan((req) => plans.putIndex(req.params.planId, req.params.courseCode, req.body || {})),
   removePlanIndex: handlePlan((req) => plans.removeIndex(req.params.planId, req.params.courseCode)),

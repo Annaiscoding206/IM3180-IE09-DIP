@@ -12,6 +12,7 @@ async function applyMigration(pool) {
 }
 
 async function seedDemoCurriculum(pool, seed) {
+  const { writeAcademicProfile } = require("../src/services/studentProfileService");
   const db = await pool.getConnection();
   try {
     await db.query("SET TRANSACTION ISOLATION LEVEL READ COMMITTED");
@@ -56,7 +57,7 @@ async function seedDemoCurriculum(pool, seed) {
     for (const row of seed.groups) await ensure("curriculum_elective_group", { curriculum_id, category_code: row.category_code, group_code: row.group_code }, { curriculum_id, ...checked("curriculum_elective_group", row) });
     for (const row of seed.courses) await ensure("curriculum_course", { curriculum_id, course_code: row.course_code }, { curriculum_id, ...checked("curriculum_course", row) });
     if (student.admission_year !== c.admission_year || student.admission_route !== c.admission_route) {
-      await db.query("UPDATE student SET admission_year = ?, admission_route = ? WHERE student_id = ?", [c.admission_year, c.admission_route, seed.student_id]);
+      await writeAcademicProfile(db, student, { admission_year: c.admission_year, admission_route: c.admission_route });
       changed++;
     }
     if (changed) for (const r of requests) await invalidateRequestPlans(db, r.request_id);

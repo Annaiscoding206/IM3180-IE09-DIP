@@ -18,8 +18,12 @@ const {
 
 const router = express.Router();
 const { planningIdentity } = require("../middleware/planningIdentity");
+const { requestOwner, planOwner } = require("../middleware/planningOwnership");
+router.use(planningIdentity);
+router.param("requestId", requestOwner);
+router.param("planId", planOwner);
 const { getIndexAlternatives } = require("../controllers/alternativeIndexController");
-router.get("/:planId/indexes/:courseCode/alternatives", planningIdentity, getIndexAlternatives);
+router.get("/:planId/indexes/:courseCode/alternatives", getIndexAlternatives);
 
 router.get("/:planId", getPlan);
 router.get("/:planId/indexes", getPlanIndexes);
