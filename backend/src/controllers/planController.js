@@ -178,7 +178,7 @@ const getPlanTimetable = async (req, res) => {
 
 const handlePlan = (action) => async (req, res) => {
   try {
-    const data = await action(req);
+    const data = await action(req, res);
     return res.status(data.created === true ? 201 : 200).json({
       success: true, ...(Array.isArray(data) ? { count: data.length } : {}), data,
     });
@@ -199,9 +199,11 @@ module.exports = {
   addSelectedCourse,
   removeSelectedCourse,
   getPlanTimetable,
+  getPlanSummary: handlePlan((req, res) => require("../services/planningSummaryService").getPlanSummary(req.params.planId, res.locals.authenticatedStudentId)),
   getPlan: handlePlan((req) => plans.getPlanDetails(req.params.planId)),
   getPlanIndexes: handlePlan((req) => plans.getIndexes(req.params.planId)),
   putPlanIndex: handlePlan((req) => plans.putIndex(req.params.planId, req.params.courseCode, req.body || {})),
+  setPlanIndexLock: handlePlan((req) => plans.setIndexLock(req.params.planId, req.params.courseCode, req.body || {})),
   removePlanIndex: handlePlan((req) => plans.removeIndex(req.params.planId, req.params.courseCode)),
   getPlanClashes: handlePlan((req) => plans.getClashes(req.params.planId)),
   previewPlanIndex: handlePlan((req) => plans.previewIndex(req.params.planId, req.body || {})),

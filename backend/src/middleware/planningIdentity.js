@@ -6,7 +6,7 @@ function resolveIdentity(req, res, next, optional) {
   if (typeof res.locals.authenticatedStudentId === "string" && res.locals.authenticatedStudentId.trim()) return next();
 
   const origins = new Set(["http://localhost:5173", "http://127.0.0.1:5173",
-    `http://localhost:${process.env.PORT || 5000}`, `http://127.0.0.1:${process.env.PORT || 5000}`]);
+    `http://localhost:${process.env.PORT || 5001}`, `http://127.0.0.1:${process.env.PORT || 5001}`]);
   if (req.headers.origin && !origins.has(req.headers.origin)) {
     if (optional) return next();
     return res.status(403).json({ success: false, message: "Planning demo access is restricted to local origins" });

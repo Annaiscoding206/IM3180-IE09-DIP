@@ -56,23 +56,27 @@ function getPreferences(requestId, studentId) {
   return withRequest(requestId, studentId, false, readPreferences);
 }
 
+// Caller holds the owned planning_request lock. Used by HTTP replacement and
+// Leo's atomic confirmation transaction; there is only one persistence rule.
+async function replacePreferencesInTransaction(db, request, body) {
+  const preferences = validatePreferences(body);
+  const previous = await readPreferences(db, request);
+  let changed = false;
+  for (const [name, section] of Object.entries(sections)) {
+    if (signature(previous[name]) === signature(preferences[name])) continue;
+    changed = true;
+    await db.query(`DELETE FROM ${section.table} WHERE request_id = ?`, [request]);
+    for (const row of preferences[name]) {
+      await db.query(`INSERT INTO ${section.table} (request_id, ${section.fields.join(", ")}) VALUES (${["?", ...section.fields.map(() => "?")].join(", ")})`,
+        [request, ...section.fields.map((field) => row[field])]);
+    }
+  }
+  if (changed) await invalidateRequestPlans(db, request);
+  return { ...await readPreferences(db, request), changed };
+}
 function replacePreferences(requestId, studentId, body) {
   const preferences = validatePreferences(body);
-  return withRequest(requestId, studentId, true, async (db, request) => {
-    const previous = await readPreferences(db, request);
-    let changed = false;
-    for (const [name, section] of Object.entries(sections)) {
-      if (signature(previous[name]) === signature(preferences[name])) continue;
-      changed = true;
-      await db.query(`DELETE FROM ${section.table} WHERE request_id = ?`, [request]);
-      for (const row of preferences[name]) {
-        await db.query(`INSERT INTO ${section.table} (request_id, ${section.fields.join(", ")}) VALUES (${["?", ...section.fields.map(() => "?")].join(", ")})`,
-          [request, ...section.fields.map((field) => row[field])]);
-      }
-    }
-    if (changed) await invalidateRequestPlans(db, request);
-    return { ...await readPreferences(db, request), changed };
-  });
+  return withRequest(requestId, studentId, true, (db, request) => replacePreferencesInTransaction(db, request, preferences));
 }
 
 async function readBlocks(db, requestId) {
@@ -119,4 +123,4 @@ function clearBlocks(requestId, studentId) {
   });
 }
 
-module.exports = { getPreferences, replacePreferences, getBlocks, addBlock, removeBlock, clearBlocks, readPreferences, readBlocks };
+module.exports = { replacePreferencesInTransaction, getPreferences, replacePreferences, getBlocks, addBlock, removeBlock, clearBlocks, readPreferences, readBlocks };

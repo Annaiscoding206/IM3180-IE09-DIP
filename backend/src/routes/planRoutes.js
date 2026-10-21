@@ -26,8 +26,10 @@ const { getIndexAlternatives } = require("../controllers/alternativeIndexControl
 router.get("/:planId/indexes/:courseCode/alternatives", getIndexAlternatives);
 
 router.get("/:planId", getPlan);
+router.get("/:planId/summary", require("../controllers/planController").getPlanSummary);
 router.get("/:planId/indexes", getPlanIndexes);
 router.put("/:planId/indexes/:courseCode", putPlanIndex);
+router.put("/:planId/indexes/:courseCode/lock", require("../controllers/planController").setPlanIndexLock);
 router.delete("/:planId/indexes/:courseCode", removePlanIndex);
 router.get("/:planId/clashes", getPlanClashes);
 router.get("/:planId/eligibility", getPlanEligibility);

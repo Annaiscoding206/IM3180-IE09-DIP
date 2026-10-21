@@ -151,3 +151,14 @@
 
 .planner-index-status.has-index { display: inline-flex; gap: 4px; align-items: center; }
 .planner-index-status svg { width: 13px; height: 13px; }
+
+.planner-preferences { margin: 18px 0; padding: 16px; background: var(--panel, #fff); border: 1px solid var(--line); border-radius: 10px; }
+.planner-preferences summary { cursor: pointer; font-weight: 600; }
+.planner-preferences fieldset { margin: 12px 0; border: 1px solid var(--line); border-radius: 6px; }
+.planner-preferences fieldset > div { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
+.planner-preferences input, .planner-preferences select, .planner-preferences button { margin: 4px; padding: 6px; }
+.planner-plan-buttons { flex-wrap: wrap; }
+.planner-comparison { overflow-x: auto; margin: 16px 0; }
+.planner-comparison table { width: 100%; border-collapse: collapse; }
+.planner-comparison caption { text-align: left; font-weight: 600; padding: 8px 0; }
+.planner-comparison th, .planner-comparison td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); }

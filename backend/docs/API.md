@@ -1,439 +1,243 @@
-# Smart STARS Companion Backend API
+# Smart STARS Companion API
 
-Updated: 5 October 2026 — Backend Person 1, Week 8.
+Local base URL: `http://127.0.0.1:5001/api`. JSON request bodies use `Content-Type: application/json`. See [setup](../../docs/SETUP.md) for database extensions and demo configuration.
 
-This reference covers the implemented course, student, eligibility, planning-request, index, timetable, and final-selection APIs, including the changes verified during Week 8. Auto-generation, preferences, ranking, and alternative recommendations are separate Person 2 integration work; no unverified endpoints for those features are listed here.
+## Conventions and identity
 
-## 1. Connection and conventions
+Most successful operations return `{ "success": true, "data": ... }`; list endpoints often add `count`. Eligibility and the existing timetable endpoints have the specific envelopes shown below. Errors return `{ "success": false, "message": "..." }`, optionally with `code`, `validation`, `reasons`, `suggestions` or other evidence. IDs in examples are illustrative; use IDs returned by your database.
 
-Local base URL: `http://localhost:5000/api`
+Planning requests own selected **course codes** in `planning_request_course`. Each child plan owns chosen **course/index pairs** in `plan_course`. `request_id` and `plan_id` are never interchangeable. The legacy `/plans/:requestId/courses` route deliberately takes a request ID.
 
-Send JSON request bodies with `Content-Type: application/json`. The backend uses Node.js, Express, and MySQL (`stars_companion_db`). Examples use local/demo records; identifiers are not portable between databases. Use IDs returned by creation endpoints.
+Planning, Degree Audit and curriculum operations require a trusted server-side `res.locals.authenticatedStudentId`. For this local prototype, `DEMO_PLANNING_ENABLED=true`, a loopback connection, non-production mode and a permitted local Origin resolve that identity to `DEMO001`. A supplied body/query `student_id` is a scope check, never authentication. Root request create/list must match this identity (404 otherwise); foreign request/plan resources return 404. No browser identity header is accepted.
 
-### Request IDs versus plan IDs
+Course catalogue reads are public; trusted/demo identity adds completion and curriculum annotations. Existing student list/detail/eligibility routes remain public demo APIs. They are not production authorization. Chat has a separate `DEMO_CHAT_ENABLED=true` opt-in and local-only access; see the chat section.
 
-- A planning request belongs to a student and holds the academic year, semester, and selected courses.
-- A plan belongs to a request and holds chosen course indexes.
-- `/plans/:requestId/courses` uses a **request ID**, despite the `/plans` prefix.
-- Other plan endpoints below use a **plan ID**.
+Common HTTP statuses:
 
-### Response envelopes
-
-Responses are not all wrapped identically. Preserve these existing contracts in frontend integration:
-
-| Endpoint family | Success envelope |
+| Status | Meaning |
 |---|---|
-| Course search | `{ success, count, data: [...] }` |
-| Course detail / student detail | `{ success, data: {...} }` |
-| Student list | `{ success, data: [...] }` |
-| Course indexes | `{ success, course_code, count, data: [...] }` |
-| Course-index timetable | `{ success, course_code, index_no, timetable_available, count, data: [...] }` |
-| Student eligibility | `{ success, ...eligibilityFields }` |
-| Selected-course list | `{ success, count, data: [...] }` |
-| Add/remove selected course | `{ success, message }` |
-| Planning-request and most plan operations | `{ success, data }`, with `count` for arrays |
-| Plan timetable | `{ success, plan_id, empty_plan, timetable_available, timetable_complete, missing_slot_indexes, count, data: [...] }` |
+| 200 | Read/update/delete, or a chat reply (inspect `planning_result` for action outcome) |
+| 201 | Created request, plan, selected course, blocked period, newly chosen index, or generated batch |
+| 400 | Invalid ID, body/filter, malformed time, duplicate preference input |
+| 401 | Required trusted/demo identity absent |
+| 403 | Disallowed local origin/environment |
+| 404 | Resource missing or outside the student's ownership scope |
+| 409 | Duplicate selection/name/block, archived edit, source-plan ambiguity, search limit, curriculum/selection ambiguity, or removal guard |
+| 422 | Academic/term/timetable/constraint validation fails or no feasible plan |
+| 500 | Database/unexpected planning failure |
+| 503 | Chat/model/history service unavailable |
 
-The course-index timetable's top-level `index_no` is currently a string; slot and stored-plan index numbers are numbers. Teaching times are strings such as `08:30:00`. Preserve nullable fields rather than substituting fabricated values.
+Malformed JSON is rejected by Express before controllers and may return HTML, rather than the JSON error envelope.
 
-## 2. Endpoint directory
+## Health, courses and student profile
 
-All paths are relative to the base URL.
+| Method and path | Input / result |
+|---|---|
+| `GET /health` | Executes `SELECT 1`; `{success:true,message:"Backend and database are connected"}` |
+| `GET /courses` | Optional `search`, `au`, `academic_year`, `semester` (1–3); returns catalogue rows, `course_types` array, count |
+| `GET /courses/:courseCode` | Course metadata and `indexes`; 404 unknown course |
+| `GET /courses/:courseCode/indexes` | `{success,course_code,count,data:[...]}` |
+| `GET /courses/:courseCode/indexes/:indexNo/timetable` | `{success,course_code,index_no,timetable_available,count,data:[session...]}`; valid pair with no slots is 200 with `[]`; unknown pair is 404 |
+| `GET /students` | Demo student list |
+| `GET /students/:studentId` | Profile, programme, study/admission years, route, `completed_courses`, `degree_audit_summary`, `curriculum_progress` |
+| `GET /students/:studentId/eligibility/:courseCode` | Optional owned `request_id` gives incremental selected-course context |
 
-| Method | Path | Purpose |
-|---|---|---|
-| GET | `/health` | Check backend/database connection |
-| GET | `/courses` | Search/filter courses |
-| GET | `/courses/:courseCode` | Course detail, including indexes |
-| GET | `/courses/:courseCode/indexes` | Index options |
-| GET | `/courses/:courseCode/indexes/:indexNo/timetable` | Index timetable |
-| GET | `/students` | Student list |
-| GET | `/students/:studentId` | Student profile |
-| GET | `/students/:studentId/eligibility/:courseCode` | Academic eligibility, optionally with `request_id` |
-| POST | `/planning-requests` | Create request |
-| GET | `/planning-requests?student_id=DEMO001` | List student requests |
-| GET | `/planning-requests/:requestId` | Request detail |
-| POST | `/planning-requests/:requestId/plans` | Create plan |
-| GET | `/planning-requests/:requestId/plans` | List request plans |
-| GET | `/plans/:requestId/courses` | Selected courses |
-| POST | `/plans/:requestId/courses` | Add selected course |
-| DELETE | `/plans/:requestId/courses/:courseCode` | Remove selected course |
-| GET | `/plans/:planId` | Plan metadata |
-| GET | `/plans/:planId/indexes` | Chosen indexes |
-| PUT | `/plans/:planId/indexes/:courseCode` | Add/replace index |
-| DELETE | `/plans/:planId/indexes/:courseCode` | Remove index |
-| GET | `/plans/:planId/timetable` | Combined timetable |
-| GET | `/plans/:planId/clashes` | Stored timetable validation |
-| POST | `/plans/:planId/clash-check` | Preview candidate index |
-| GET | `/plans/:planId/eligibility` | Plan academic eligibility |
-| GET | `/plans/:planId/validation` | Combined final validation |
-| POST | `/plans/:planId/select` | Validate and select final plan |
+Catalogue annotations include `is_completed`, `completion_status` (`Completed` / `Not completed`), `curriculum_status` (`COMPLETED`, `PLANNED`, `NOT_YET_TAKEN`), category/group, matching state and planning request ID. Completion comes from PASSED academic records, not browser state. Status and eligibility are separate.
 
-## 3. Health
-
-`GET /health` returns 200:
+Eligibility response fields are **top level**, e.g. this abbreviated success:
 
 ```json
-{ "success": true, "message": "Backend and database are connected" }
+{"success":true,"student_id":"DEMO001","course_code":"IE3014","prerequisite_eligible":true,"programme_eligible":true,"eligible":true,"can_select":true,"already_completed":false,"requires_review":false}
 ```
 
-A database connection failure returns 500 with `success: false` and an error message.
+The full response also includes corequisites, mutual exclusions, missing requirement groups and verified curriculum-year rules. Options in one requirement group are OR; groups are AND. `can_select` permits incremental selection before a valid corequisite is added; `eligible` includes current corequisite satisfaction. Passed courses cannot be reselected. Unknown student/course: 404. Cohort restriction strings without supported verified rules require review rather than a guessed interpretation. Recommended curriculum years never become eligibility restrictions.
 
-## 4. Course exploration
+## Degree Audit and Programme Curriculum
 
-### GET `/courses`
-
-Optional query filters:
-
-| Parameter | Meaning |
+| Method and path | Query / result |
 |---|---|
-| `search` | Course-code or course-name substring using SQL LIKE |
-| `au` | Academic units |
-| `semester` | Semester, 1–3 |
-| `academic_year` | Academic year, for example `2026-2027` |
+| `GET /students/:studentId/degree-audit` | Optional `academic_year`, `semester` (1–3), `result` (`PASSED`, `FAILED`, `IN_PROGRESS`) |
+| `GET /students/:studentId/curriculum` | Optional owned `request_id` for planned-course context |
+| `GET /students/:studentId/curriculum/progress` | Same current curriculum/progress representation |
 
-Example: `/courses?search=MH1810&semester=1&academic_year=2026-2027`.
+Example:
 
-Returns distinct course metadata ordered by course code. Multiple indexes do not create duplicate identical metadata rows. Metadata fields include `course_code`, `course_name`, `au`, `grading_type`, `exam_datetime`, `prerequisite_text`, `restriction_text`, `mutually_exclusive_text`, `bde`, `gepe`, `academic_year`, `semester`, and `course_types`. `course_types` is an array and may contain any combination of `CORE`, `MPE`, and `BDE`.
+```http
+GET /api/students/DEMO001/degree-audit?academic_year=2025-2026&semester=2&result=PASSED
+```
 
-No matches is a successful 200 response:
+Degree Audit `data` contains `student_id`, `filters`, `records`, `passed_course_codes`, `earned_au`, `earned_au_complete`, `summary`, `filtered_summary` and `summary_scope:"all_academic_records"`. Each record has course code/title, nullable academic year/semester/grade, result, earned AU and provenance. Filters narrow `records` and `filtered_summary`; overall completion/AU remains across the full history. PASSED attempts count once per course; failed and in-progress attempts never count. Unknown legacy AU is reported as incomplete, not invented or silently treated as a known zero.
+
+Curriculum `data` contains `curriculum` (including `is_demo`), `matching`, `categories`, `courses`, `summary`, `degree_audit_summary`, and `planning_context`. Categories and elective groups expose required/completed/remaining AU and completed/remaining course requirements. Courses expose status and eligibility separately. Matching is exact programme/admission year/route, with route-independent matching only if the stored curriculum explicitly has a null route. No match: 404 `NO_CURRICULUM`; multiple matches: 409 `AMBIGUOUS_CURRICULUM`. The seeded curriculum is a synthetic prototype subset, not an official graduation audit. Without `request_id`, the service chooses the latest planning request for status context.
+
+No public academic-record/profile/curriculum mutation or upload endpoints are implemented. Internal seed/import/profile services own validation and invalidation; direct SQL bypasses these writers, so final/selected retrieval still revalidates current data.
+
+## Planning requests and selected courses
+
+| Method and path | Body / result |
+|---|---|
+| `POST /planning-requests` | `{student_id,academic_year,semester,target_au?}`; created request |
+| `GET /planning-requests?student_id=DEMO001` | Owned requests in request-ID order |
+| `GET /planning-requests/:requestId` | Owned request metadata |
+| `GET /plans/:requestId/courses` | Selected courses, count |
+| `POST /plans/:requestId/courses` | `{course_code:"IE3014"}`; uses `can_select` and request term |
+| `DELETE /plans/:requestId/courses/:courseCode` | Removes request course if removal guard permits |
 
 ```json
-{ "success": true, "count": 0, "data": [] }
+{"student_id":"DEMO001","academic_year":"2026-2027","semester":1,"target_au":18}
 ```
 
-Invalid filters return 400; unexpected database errors return 500.
+Repeated selection returns 409; ineligible/completed/not-offered course returns 422. Removing a course referenced by a non-archived plan returns 409 with `affected_plans`; remove those chosen indexes explicitly first. Archived plan history is preserved. Removing a corequisite can invalidate remaining plans; it does not silently remove their courses.
 
-### GET `/courses/:courseCode`
+## Preferences and blocked periods
 
-Returns course metadata in `data`, with an `indexes` array containing `index_no`, `vacancy`, and `vacancy_updated_at`. A missing course returns 404. Invalid course-code input returns 400.
+| Method and path | Body / result |
+|---|---|
+| `GET /planning-requests/:requestId/preferences` | Saved day/time/objective arrays, empty arrays initially |
+| `PUT /planning-requests/:requestId/preferences` | Atomic full replacement; all three arrays required |
+| `GET /planning-requests/:requestId/blocked-periods` | `data:{request_id,blocked_periods:[...]}` |
+| `POST /planning-requests/:requestId/blocked-periods` | `{day_of_week,start_time,end_time}`; created block |
+| `DELETE /planning-requests/:requestId/blocked-periods/:blockId` | Removes one owned block |
+| `DELETE /planning-requests/:requestId/blocked-periods` | Clears blocks; `data:{request_id,removed_count}` |
 
-Course codes are normalized to uppercase; supported course-code inputs contain 1–10 letters or digits. Display prerequisite/restriction text is descriptive; use the eligibility endpoint for decisions.
-
-### GET `/courses/:courseCode/indexes`
-
-Returns index options ordered by index number, with top-level `course_code`, `count`, and `data`. Each option contains `index_no`, `vacancy`, and `vacancy_updated_at`. Missing course: 404. Vacancy values may be null; they are not live NTU availability guarantees.
-
-### GET `/courses/:courseCode/indexes/:indexNo/timetable`
-
-The index must belong to the course. Invalid index input returns 400; an unknown course/index pair returns 404. An existing pair with no sessions returns 200 with `timetable_available: false`, `count: 0`, and an empty `data` array.
-
-Example response with one illustrative session:
+Example full preference replacement:
 
 ```json
 {
-  "success": true,
-  "course_code": "MH1810",
-  "index_no": "15091",
-  "timetable_available": true,
-  "count": 1,
-  "data": [{
-    "slot_id": 173,
-    "course_code": "MH1810",
-    "index_no": 15091,
-    "class_type": "LECTURE",
-    "class_group": null,
-    "day_of_week": "MON",
-    "start_time": "08:30:00",
-    "end_time": "10:30:00",
-    "venue": "LT1",
-    "teaching_weeks": null
-  }]
+  "day_preferences":[{"day_of_week":"MON","preference_type":"PREFER","constraint_level":"HARD"},{"day_of_week":"WED","preference_type":"PREFER","constraint_level":"HARD"}],
+  "time_preferences":[{"start_time":"09:00","end_time":"18:00","preference_type":"PREFER","constraint_level":"HARD"}],
+  "objectives":[{"objective_type":"MINIMIZE_SCHOOL_DAYS","priority":1},{"objective_type":"MINIMIZE_GAPS","priority":2}]
 }
 ```
 
-Sessions are ordered Monday through Sunday, then by start time with stable tie ordering. This example illustrates the format, not the complete timetable for that index.
+Response: `{success:true,data:{request_id,day_preferences,time_preferences,objectives,changed}}`. Empty arrays clear their collections. Blocks are independent and never replaced by this PUT. Unknown/extra fields, missing arrays, duplicate day/type or normalized time-range/type, repeated objective, `UNSPECIFIED`, malformed/empty/reversed time ranges, and nonpositive/noninteger priorities return 400. Times accept `HH:MM` or `HH:MM:SS`, normalize to seconds, and must remain within one day. Days are `MON`–`SUN`.
 
-## 5. Student profiles
+- HARD PREFER days are an allowed-day whitelist. Every session must be on one of those days; attendance on every preferred day is not required.
+- HARD PREFER time windows are alternatives. Every session must fit fully inside at least one window; adjacent windows are not merged.
+- HARD AVOID days prohibit all sessions that day. HARD AVOID times prohibit any overlap on any day.
+- Contradictory rules remain enforced together; infeasibility is reported, never silently relaxed.
+- SOFT rules influence ranking only. Priority 1 has highest weight for `MINIMIZE_SCHOOL_DAYS` / `MINIMIZE_GAPS`.
+- A blocked period is day-specific hard unavailability, across all teaching weeks. Overlap uses `class_start < block_end && block_start < class_end`; adjacent boundaries are allowed. Duplicate exact block returns 409; removing unknown block returns 404.
 
-`GET /students` returns student records in `data`. `GET /students/:studentId` returns one record or 404 when missing.
+Changed preferences/blocks clear non-archived rankings and reset SELECTED plans to GENERATED. Identical preference replacement is a no-op. Failed replacements roll back all collections and invalidation.
 
-Profile fields: `student_id`, `student_name`, `programme`, `study_year`, and `created_at`. These documented routes are reads; no profile-edit endpoint is claimed here.
+## Plans, chosen indexes and validation
 
-## 6. Course eligibility
+| Method and path | Body / result |
+|---|---|
+| `POST /planning-requests/:requestId/plans` | `{plan_name:"My plan"}`; creates empty plan; `AUTO Plan ...` names reserved |
+| `GET /planning-requests/:requestId/plans` | All plans with current validation/selection state, including archived history |
+| `GET /plans/:planId` | Plan metadata plus current validation/selection state |
+| `GET /plans/:planId/summary` | Above plus label, indexes, every session, current comparison metrics |
+| `GET /plans/:planId/indexes` | Chosen indexes, including stored `locked` |
+| `PUT /plans/:planId/indexes/:courseCode` | `{index_no:32101}`; add (201) or replace (200) |
+| `DELETE /plans/:planId/indexes/:courseCode` | Remove chosen index; request course remains selected |
+| `PUT /plans/:planId/indexes/:courseCode/lock` | `{locked:true}` or `{locked:false}`; chosen index must exist |
+| `GET /plans/:planId/timetable` | Existing timetable envelope below |
+| `GET /plans/:planId/clashes` | Timetable-only check of current indexes |
+| `POST /plans/:planId/clash-check` | `{course_code:"IE3014",index_no:32101}`; full candidate preview, no writes |
+| `GET /plans/:planId/eligibility` | Current academic validation of chosen course set |
+| `GET /plans/:planId/validation` | Full current validation |
+| `POST /plans/:planId/select` | No body required; validate and finalize |
+| `GET /planning-requests/:requestId/active-plan` | Currently valid finalized plan, or null; never picks an arbitrary generated plan |
 
-### GET `/students/:studentId/eligibility/:courseCode`
+Index writes require the course to be selected in the parent request, a matching course/index pair and matching request term. Shared academic, clash, blocked-period and hard-rule checks apply. Replacements ignore the course's old index. Missing/malformed timetable data blocks saving. Pending corequisites and not-yet-indexed selected courses can remain during incremental manual planning (`can_save`); finalization requires the complete valid course/index set (`can_finalize`). Failed writes leave plan data unchanged.
 
-Optional query parameter: `request_id`, a positive request ID belonging to the student.
+Locks constrain regeneration from the explicit source plan; the server never auto-replaces them. Explicit manual index replacement is permitted and retains the lock flag. Lock changes invalidate that plan's saved ranking/selection metadata. Archived plans cannot be edited, locked or selected.
 
-Example: `/students/TEST_COREQ_W7/eligibility/MH1811?request_id=3`.
+Validation response (abbreviated):
 
-An academic rejection is still a successful eligibility evaluation: HTTP 200 with `eligible: false`. Invalid request-ID input returns 400. Missing student/course or a request not belonging to the student returns 404.
+```json
+{"success":true,"data":{"plan_id":21,"request_id":10,"can_save":true,"can_finalize":true,"requires_review":false,"invalid_term_indexes":[],"eligibility":{"eligible":true,"missing_index_courses":[]},"timetable":{"status":"clear","can_save":true,"conflicts":[],"missing_slot_indexes":[],"data_issues":[],"warnings":[]},"constraints":{"valid":true,"violations":[]}}}
+```
+
+Clashes require same day and `startA < endB && startB < endA`, plus potentially overlapping teaching weeks. Known disjoint week sets do not clash. Missing/NULL weeks conservatively overlap and produce warnings. Supported stored weeks are numeric weeks/ranges/comma lists (e.g. `1-13`, `2,4,6`); malformed values cause incomplete validation. Conflict evidence identifies both courses/indexes/slots, day, overlap times, overlapping weeks and `certainty` (`confirmed` / `potential`).
+
+Existing timetable envelope is preserved:
+
+```json
+{"success":true,"plan_id":21,"empty_plan":false,"timetable_available":true,"timetable_complete":true,"missing_slot_indexes":[],"count":1,"data":[{"course_code":"IE3014","index_no":32101,"slot_id":1,"class_type":"LECTURE","day_of_week":"MON","start_time":"09:00:00","end_time":"10:00:00","teaching_weeks":"1-13","venue":"Demo room"}]}
+```
+
+`data` is a flat session array. `timetable_complete` here describes slot availability; it does **not** imply full academic/constraint validity. Use `/validation` for that decision.
+
+Final selection reruns Degree Audit, verified curriculum restrictions, term/completeness, corequisites/exclusions, clashes, blocks and hard preferences. Invalid finalization is 422 with `validation`. Successful selection makes one plan SELECTED per request, resetting any previous selection to GENERATED. Plan reads expose:
 
 | Field | Meaning |
 |---|---|
-| `student_id`, `course_code`, `request_id` | Evaluated identities; request ID may be null |
-| `corequisite_context` | Which selected courses were considered |
-| `prerequisite_eligible` | All prerequisite groups satisfied by completed courses |
-| `corequisite_eligible` | All corequisite groups satisfied in the current context |
-| `programme_eligible` | true, false, or null for unresolved cohort rules |
-| `mutual_exclusion_eligible` | No completed/selected-course exclusion conflict |
-| `can_select` | Prerequisites, programme, and mutual exclusions pass |
-| `eligible` | All academic checks, including corequisites, pass |
-| `requires_review` | Programme eligibility cannot be confirmed |
-| `missing_prerequisite_groups`, `missing_corequisite_groups` | Unsatisfied groups, each with `requirement_group` and `alternatives` |
-| `missing_prerequisites` | Compatibility field: flattened alternatives in unsatisfied prerequisite groups |
-| `conflicting_completed_courses`, `conflicting_selected_courses` | Conflicting course-code arrays |
-| `programme_restrictions`, `unresolved_restrictions` | Programme rule details |
-| `message` | Human-readable explanation |
+| `stored_status` | Database status |
+| `status` | Effective status (stale SELECTED is presented as GENERATED) |
+| `selection_state` | `ACTIVE_VALID`, `STALE_INVALID`, `NOT_SELECTED`, `ARCHIVED` |
+| `active_selection` | True only for a currently valid SELECTED plan |
 
-### Rules and contexts
+Supported writers invalidate metadata; retrieval also catches invalidity introduced by external SQL without mutating history. An invalidated GENERATED plan has `NOT_SELECTED`; no historical-selection timestamp is invented. A stale stored SELECTED plan has `STALE_INVALID`.
 
-- Any alternative satisfies its group (OR); every group must be satisfied (AND).
-- Prerequisites use completed courses, not concurrent selections.
-- Without `request_id`, corequisites use completed courses only: `completed_courses_only`.
-- With `request_id`, corequisites also use request-selected courses: `completed_and_request_selected_courses`.
-- Plan eligibility uses only completed courses plus courses actually included in that plan: `completed_and_plan_courses`.
-- Mutual exclusion is checked in both directions, even when only one direction is stored, against completed and context-selected courses.
-- A missing corequisite alone permits incremental selection (`can_select: true`) but prevents final academic eligibility (`eligible: false`).
-- Relevant cohort rules cannot be inferred from study year. Unresolved eligibility returns `programme_eligible: null`, `requires_review: true`, and blocks selection. A definite general programme denial remains false.
+Active response: `{success:true,data:{request_id:10,status:"active_selection",plan:{...summary},stale_plan_ids:[]}}`. Without a valid selection: `status:"no_active_selection",plan:null`. Unexpected multiple valid selections return 409 `AMBIGUOUS_SELECTION`.
 
-Example of an unsatisfied corequisite group:
+## Automatic generation and alternatives
+
+`POST /planning-requests/:requestId/generate-plans`
 
 ```json
-{ "requirement_group": 1, "alternatives": ["MH1810"] }
+{"source_plan_id":21}
 ```
 
-## 7. Planning requests and plan creation
+`{}` is permitted when no plan for that request has locks. If locks exist and no source is supplied, 409 `SOURCE_PLAN_REQUIRED` returns `locked_plan_ids`. Source must be an owned child of this request. Existing generation semantics also allow reading locks from an archived source; the archived source itself is not edited. Only that source's locks constrain this run.
 
-### POST `/planning-requests`
+Returns 201 `{success:true,data:{request_id,source_plan_id,plans,search,retired_plan_ids,...}}`. One to three distinct complete options are persisted with labels Plan A/B/C, generated `plan_name`, rank, match score, indexes, metrics and final validation. Fewer feasible options means fewer returned plans. It does not finalize any plan. Previous replaceable generated batches are archived; selected, archived, manual and explicit source plans are preserved. No plan/index persistence occurs on failure.
+
+`metrics` includes `campus_days`, `total_gap_minutes`, soft day/time reward and penalty, unrounded `cost`, and `match_score`. Gap metrics use the weekly session footprint, merging overlaps before measuring gaps; teaching-week-specific attendance is not separately scored. Rank uses unrounded cost, then deterministic canonical index combination. Score is `round(100/(1+cost),2)`; cost combines normalized soft penalties and objective metrics divided by positive priority. These are prototype comparison scores, not official registration likelihood. `/summary` recomputes metrics against current saved preferences (`metrics_scope:"current_saved_preferences"`); saved rank/score may be null after invalidation.
+
+Search is bounded (currently 20,000 nodes / 200 candidates). Always inspect `search.exhaustive`; a successful bounded search is not a claim of global optimality. No-plan errors distinguish exhaustive failure (422 `NO_FEASIBLE_PLAN`) from an exhausted search budget (409 `SEARCH_LIMIT_REACHED`). Responses include `plans:[]`, `search`, `infeasibility_proven`, `reasons` and `suggestions`. Search evidence can describe multiple conditions rather than one proven root cause.
+
+Example error, abbreviated:
 
 ```json
-{
-  "student_id": "DEMO001",
-  "academic_year": "2026-2027",
-  "semester": 1,
-  "target_au": 12
-}
+{"success":false,"code":"NO_FEASIBLE_PLAN","message":"No feasible timetable satisfies the selected courses and constraints","plans":[],"reasons":[{"reason_id":"reason_1","code":"BLOCKED_PERIOD_CONFLICT","course_code":"IE3014","index_no":32101,"day":"MON","class_start":"09:30:00","class_end":"10:20:00","blocked_start":"10:00:00","blocked_end":"11:00:00","explanation":"Class overlaps a saved blocked period."}],"suggestions":[{"action":"REVIEW_BLOCKED_PERIOD","reason_ids":["reason_1"],"requires_student_action":true,"explanation":"Change or remove the conflicting blocked period."}]}
 ```
 
-Returns 201 with the created request in `data`. `target_au` is optional/null or a positive integer. Semester must be 1–3. Academic year must be a nonempty string of at most 20 characters; student ID at most 15 characters. The student must exist.
+Reason IDs/actions are returned by the service; clients should display explanations rather than infer feasibility from a suggestion. Other reasons include `COURSE_INELIGIBLE`, `COREQUISITE_UNSATISFIED`, `MUTUAL_EXCLUSION`, `COURSE_ALREADY_COMPLETED`, `NO_INDEXES_FOR_TERM`, `INCOMPLETE_TIMETABLE_DATA`, `TIMETABLE_CLASH`, `HARD_DAY_CONSTRAINT`, `HARD_TIME_CONSTRAINT`, `LOCKED_INDEX_INVALID`, `LOCKED_INDEX_CONFLICT`, search-limit and aggregate search evidence.
 
-`GET /planning-requests?student_id=...` lists requests with `count` and `data`. The student parameter is required. `GET /planning-requests/:requestId` returns request detail. Invalid IDs return 400; missing resources return 404.
+`GET /plans/:planId/indexes/:courseCode/alternatives?candidate_index_no=32101`
 
-### POST `/planning-requests/:requestId/plans`
+Without `candidate_index_no`, validates the stored chosen index. Without either, 400. The course must already be selected. It checks every same-course, same-term alternative against the complete surrounding plan and shared academic/timetable/hard-rule validation. Alternatives are deterministic, unique and exclude the evaluated index. A partial/otherwise-invalid surrounding plan can yield no valid alternatives.
 
-```json
-{ "plan_name": "Plan A" }
-```
+Response `data` includes `current_index_no`, `candidate_index_no`, `evaluated_index_no`, `evaluation_source`, `locked`, `locked_index_no`, `auto_applied:false`, `validation_scope`, `validation`, `reasons`, `suggestions`, `alternatives`, `rejected_alternatives`, `alternative_count`, and `status` (`alternatives_available` / `no_valid_alternative`). Each suggestion requires explicit student action and subsequent write-time revalidation. No automatic index replacement occurs.
 
-Returns 201 with the created plan in `data`. Plan name must be nonempty and at most 50 characters. Duplicate names within the same request return 409. Creating a plan does not generate its indexes automatically.
+## Leo/chat integration
 
-`GET /planning-requests/:requestId/plans` returns the request's plans with `count` and `data`. `GET /plans/:planId` returns plan metadata, including its request and student context, status, rankings/scores where present, and timestamps.
-
-## 8. Request-selected courses
-
-### GET `/plans/:requestId/courses`
-
-Returns `{ success, count, data }`; each row contains `request_id` and `course_code`, ordered by course code. Existing empty requests return 200 with an empty list. Invalid ID: 400. Missing request: 404.
-
-### POST `/plans/:requestId/courses`
-
-```json
-{ "course_code": "MH1811" }
-```
-
-Course code is trimmed, normalized to uppercase, and restricted to 1–10 letters or digits. The student is obtained from the request; sending a different student ID in the body does not override it.
-
-Success: 201, `{ "success": true, "message": "Course added successfully" }`.
-
-Duplicate: 409. Missing resource: 404. Failed `can_select`: 422 with eligibility fields at the top level alongside `success: false` and `message`. Missing corequisites alone do not block adding.
-
-### DELETE `/plans/:requestId/courses/:courseCode`
-
-Success: 200, `{ "success": true, "message": "Course removed successfully" }`.
-
-If the course has an index in any plan under the request, returns 409 with `affected_plans`, an array of `{ plan_id, plan_name }`. Remove those plan indexes first. Missing selection returns 404.
-
-Successful course additions/removals clear rankings and scores for plans under that request and reset SELECTED plans to GENERATED.
-
-## 9. Chosen indexes
-
-### GET `/plans/:planId/indexes`
-
-Returns `count` and `data` containing stored plan-course rows, including course/index identity and the `locked` flag.
-
-### PUT `/plans/:planId/indexes/:courseCode`
-
-```json
-{ "index_no": 15091 }
-```
-
-Checks that the course is selected in the parent request, the course/index exists, its academic year/semester match, `can_select` passes, and the resulting timetable can be saved. Corequisites can remain temporarily incomplete while building the plan.
-
-Success is 201 for insertion or 200 for replacement. `data` contains `created`, `plan_id`, `course_code`, `index_no`, and timetable `validation`. Replacing an index excludes the old index during clash checking and preserves its `locked` flag.
-
-Failures: 400 invalid input; 404 missing plan/pair; 422 unselected course, wrong term, academic selection rejection, or timetable failure. Academic rejection includes `eligibility`; timetable rejection includes `validation`. Rejected writes do not modify stored indexes.
-
-### DELETE `/plans/:planId/indexes/:courseCode`
-
-Removes the chosen index, not the request-selected course. Returns 200 with `data: { plan_id, course_code }`; absent chosen index returns 404.
-
-Successful index writes/removals clear that plan's ranking/score and reset SELECTED to GENERATED. Explicit edits are not prevented by the `locked` flag; that flag is reserved for regeneration behavior.
-
-## 10. Timetable display and clash validation
-
-### GET `/plans/:planId/timetable`
-
-Top-level fields: `success`, `plan_id`, `empty_plan`, `timetable_available`, `timetable_complete`, `missing_slot_indexes`, `count`, and session array `data`.
-
-- `timetable_available`: at least one session exists.
-- `timetable_complete`: the plan is nonempty and every chosen index has session data.
-- `missing_slot_indexes`: course/index pairs without sessions.
-- Sessions use the same identity/day/time/venue/week fields as course-index timetables and are ordered Monday–Sunday, then by start time.
-
-Completeness here does not establish academic eligibility or absence of clashes. An empty plan has both availability and completeness false.
-
-### GET `/plans/:planId/clashes`
-
-Evaluates stored indexes and returns the result in `data`.
-
-### POST `/plans/:planId/clash-check`
-
-```json
-{ "course_code": "MH1810", "index_no": 15091 }
-```
-
-Previews an add/replacement without saving. Candidate selection rules still apply. A valid preview request returns 200 with the result in `data`, even when `can_save` is false. Preview includes the `candidate` pair.
-
-Timetable results contain `plan_id`, `status` (`clear`, `conflict`, or `incomplete`), `can_save`, `conflicts`, `missing_slot_indexes`, `data_issues`, and `warnings`.
-
-Conflict entries identify both sessions and the overlapping time interval; `certainty` distinguishes confirmed week overlap from potential overlap.
-
-- Adjacent classes are allowed; different days do not clash.
-- Numeric teaching-week lists/ranges use week intersection.
-- Missing/blank teaching weeks produce warnings and assume possible overlap.
-- Unsupported/malformed week values, invalid time/day data, or missing slots make validation incomplete and block saving.
-- Sessions within the same index are also checked against one another.
-- An empty plan may have no clashes; final validation separately rejects empty plans.
-
-## 11. Plan academic eligibility
-
-### GET `/plans/:planId/eligibility`
-
-Returns `data` containing `plan_id`, `request_id`, `student_id`, `eligible`, `empty_plan`, `requires_review`, `missing_index_courses`, `unselected_courses`, and per-course `courses` results.
-
-Every requested course must have an index, no unselected course may appear in the plan, the plan must be nonempty, and every included course must be academically eligible. Corequisites use actual plan courses, not merely request selections.
-
-This endpoint does not by itself establish timetable validity. Academic failure is reported in a 200 response with `eligible: false`.
-
-## 12. Combined final validation
-
-### GET `/plans/:planId/validation`
-
-Returns `{ success: true, data: ... }`, where `data` contains:
-
-| Field | Meaning |
+| Method and path | Contract |
 |---|---|
-| `plan_id`, `request_id` | Plan/request identity |
-| `can_finalize` | All implemented final checks pass |
-| `requires_review` | Academic manual-review flag |
-| `invalid_term_indexes` | Missing course/index pairs or mismatched/null year/semester |
-| `eligibility` | Full plan academic result |
-| `timetable` | Full timetable validation result |
+| `POST /chat` | `{message,conversationId?}`; 1–2000 characters, positive integer conversation ID if provided |
+| `GET /chat/active` | Active conversation shared by website/allowlisted Telegram demo user; `{success,conversation_id,count,data:[messages]}` or null ID / empty messages |
+| `GET /chat/conversations` | Owned conversation list |
+| `GET /chat/conversations/:conversationId/messages` | Owned messages; unknown/foreign conversation is 404 |
 
-`can_finalize` requires academic eligibility, timetable `can_save`, and no invalid-term indexes. Failed readiness is a 200 evaluation response with `can_finalize: false`. This GET does not change selected status.
+History requires trusted identity. General stateless chat can run locally without it, but cannot retrieve student data or save/generate plans. Local POST chat is disabled in production and for non-loopback requests; disallowed Origins return 403. Body `studentId` never supplies identity. The optional `conversationId` is ownership checked. With local demo enabled, omitted ID resumes the shared active conversation.
 
-Final validation currently does not enforce target AU, exam clashes, live vacancies, or Person 2's preference/ranking constraints. It must not be presented as official university registration approval.
+Successful replies return `{success:true,reply,conversation_id?}` with optional `preference_draft` or `planning_result`. HTTP 200 means the chat exchange completed, **not** that a requested planning operation succeeded. Rejected commands return `planning_result:{status:"rejected",success:false,http_status,code?,message,...}`. Model/database failures produce HTTP 503.
 
-## 13. Final plan selection
+Leo tools retrieve trusted profile/audit/curriculum, owned requests and saved constraints, generated plan details, or the current valid selected timetable through shared backend services. An ambiguous selected timetable across requests asks for a request ID; no generated plan is implicitly finalized.
 
-### POST `/plans/:planId/select`
+Preference handoff:
 
-No body is required. Revalidates and selects within one database transaction.
+1. Identify the request explicitly (Leo can list requests).
+2. Interpret to a draft; clarify ambiguous strictness (`UNSPECIFIED`) or missing time boundaries. Draft values are never saved to preference tables.
+3. A ready draft is staged in `ai_preference_draft`, bound to student-owned conversation, exact request and opaque draft token. The server renders every rule and warns that confirmation replaces all three preference collections; blocks are unchanged.
+4. Send the exact command shown by Leo:
 
-Success: 200 with `data.plan_id`, `data.request_id`, `data.status: "SELECTED"`, and the complete result in `data.validation`.
-
-Other SELECTED plans for the same request become GENERATED. At most one plan is selected through this flow. Plan editing or request-course changes require selection to be performed again.
-
-Failed readiness: 422 with top-level `success: false`, `message: "Plan cannot be selected: final validation failed"`, and `validation`. An invalid plan is not selected.
-
-The frontend must call this POST operation when confirming a plan; an earlier GET validation result is not a substitute. Selection is internal to this application and does not register courses with NTU.
-
-### Concurrency behavior
-
-Plan mutations lock the parent planning request before locking the plan. Request-course mutations lock the same parent. Transactions use READ COMMITTED so subsequent reads see changes committed while waiting. Tests cover competing conflicting index writes, mutually exclusive course additions, and final selections under one request. Person 2's writers must follow the same locking and validation conventions.
-
-## 14. Errors and frontend handling
-
-| HTTP status | Meaning |
-|---|---|
-| 200 | Successful read, update, removal, or final selection |
-| 201 | Request/plan/course selection/index created |
-| 400 | Invalid input |
-| 404 | Requested resource not found |
-| 409 | Duplicate name/course or course still used by plans |
-| 422 | Selection, timetable, or final-validation rejection |
-| 500 | Unexpected server/database failure |
-
-Most errors contain `success: false` and `message`; validation errors add details as documented for each endpoint. Frontend code should branch on status and structured fields, not parse message wording. A 200 eligibility/validation response can report an ineligible plan or course.
-
-## 15. Local configuration and testing
-
-Example `backend/.env` (do not commit credentials):
-
-```dotenv
-PORT=5000
-DB_HOST=localhost
-DB_PORT=3306
-DB_USER=root
-DB_PASSWORD=YOUR_LOCAL_PASSWORD
-DB_NAME=stars_companion_db
+```text
+CONFIRM 01234567-89ab-cdef-0123-456789abcdef FOR REQUEST 10
 ```
 
-Run from the backend directory:
+Append ` AND GENERATE` to save then generate. Only the current user's whole message matching this format authorizes confirmation. Casual “okay”, model-generated booleans, quoted commands, superseded tokens, foreign IDs, unresolved or already-saved drafts cannot save. Saving and draft status transition share one transaction; success is reported after commit. Generation is a separate transaction: if it fails, the confirmed preferences remain saved and the response shows the separate generation failure.
 
-```powershell
-npm start
+Independent generation command:
+
+```text
+GENERATE REQUEST 10 FROM PLAN 21
 ```
 
-Unit/controller tests:
+`FROM PLAN` is optional when no source lock choice is needed. For a locked source, use this command after saving, rather than `AND GENERATE` without a source. Generated summaries include rank/score/metrics/indexes, and structured `planning_result.generation.plans` also includes all sessions and validation. Model interpretation requires OpenAI; recognized commands bypass the model. No command auto-selects a final plan.
 
-```powershell
-node --test tests/course.test.js tests/clash.test.js tests/eligibility.test.js
-```
-
-MySQL/HTTP integration tests:
-
-```powershell
-$env:RUN_MYSQL_TESTS = "1"
-node --test tests/planning.integration.test.js
-Remove-Item Env:RUN_MYSQL_TESTS
-```
-
-The integration test is opt-in, starts its own server on an available port, creates temporary records in the configured local database, and cleans up its fixtures. The normal server can stay running. No schema reset is required.
-
-Reported verification on 5 October 2026: 24 eligibility tests passed and 22 integration tests passed after fixing lock order. Course/clash tests previously passed; do not interpret these separate runs as a new full-suite result. Final selection, invalid/empty requests, corequisite context, mutual-exclusion rejection, index mutation protections, and the listed concurrency cases have coverage. These results do not certify frontend or auto-generation integration.
-
-## 16. Demo data and known limitations
-
-- Local MH1811 index 50001 sessions labelled TEST at DEMO-LT/DEMO-TR were added for testing. They are synthetic, not verified university timetable data.
-- Optional Week 8 fixtures are provided in
-  `database/04_week8_demo_data.sql`. Run after the schema and course
-  catalogue are loaded. It creates TEST_COREQ_W7 if missing and adds
-  synthetic MH1811 index 50001 sessions only when that index has no
-  sessions. Existing records are preserved.
-- The original demo setup is in `database/03_demo_data.sql`; do not
-  rerun it blindly on an already populated database.
-- Create planning requests and plans through the API and use their
-  returned IDs. Request 3 and plan 2 are Anna's local IDs, not shared
-  constants.
-- Missing timetable data must stay visible; do not invent official schedules.
-- Teaching weeks, vacancies, and other catalogue fields may be null.
-- Cohort-dependent restrictions require review when cohort data is unavailable; no manual-review approval endpoint is documented here.
-- Auto-generation, ranking, preferences, and alternatives require Person 2 integration with shared validation.
-- Authentication/authorization guarantees are not established by the tests described here. A supplied student/request ID must not be treated as authenticated identity.
-- Complete-flow handoff and frontend integration verification remain open.
-
-## 17. Frontend and Person 2 handoff
-
-1. Search courses; retrieve details, indexes, and index sessions.
-2. Create/retrieve a student planning request and retain its returned request ID.
-3. Evaluate courses with that request context and add courses using `can_select`.
-4. Create/retrieve a plan and retain its separate plan ID.
-5. Choose indexes and display API rejection details without assuming a rejected write succeeded.
-6. Retrieve timetable and combined validation; show missing courses, conflicts, warnings, and manual-review requirements.
-7. Confirm with POST `/plans/:planId/select` and use the returned status.
-8. Refresh status and validation after course/index edits.
-
-Person 2 should evaluate generated combinations against actual included courses, verify timetable data and clashes, and preserve the parent-before-plan lock order for persisted changes. Direct database writes that bypass these services do not automatically receive these guarantees.
+See [Leo integration](../../docs/LEO_PREFERENCE_INTEGRATION.md) for tools, tests and limitations. The backend does not implement exam-clash checks, official registration, NTU authentication/import, or an official curriculum audit.

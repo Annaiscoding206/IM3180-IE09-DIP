@@ -1,6 +1,7 @@
 
 import { tool } from "@openai/agents";
 import { z } from "zod";
+import leo from "../../services/leoPlanningService.js";
 
 // Supported by our existing Smart STARS database schema.
 const dayCodes = [
@@ -17,7 +18,7 @@ const dayPreferenceSchema = z.object({
 });
 
 const timePreferenceSchema = z.object({
-  description: z.string(),
+  description: z.string().max(200),
   start_time: z.string().nullable(),
   end_time: z.string().nullable(),
   preference_type: z.enum(preferenceTypes),
@@ -33,10 +34,10 @@ const objectiveSchema = z.object({
 });
 
 const preferenceInputSchema = z.object({
-  day_preferences: z.array(dayPreferenceSchema),
-  time_preferences: z.array(timePreferenceSchema),
-  objectives: z.array(objectiveSchema),
-  clarification_questions: z.array(z.string())
+  day_preferences: z.array(dayPreferenceSchema).max(14),
+  time_preferences: z.array(timePreferenceSchema).max(14),
+  objectives: z.array(objectiveSchema).max(2),
+  clarification_questions: z.array(z.string().max(200)).max(10)
 });
 
 const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -144,19 +145,23 @@ export const interpretTimetablePreferencesTool = tool({
     For objectives, assign priority 1 when no relative
     importance is specified.
 
-    This tool creates a DRAFT only.
+    Bind request_id only to an explicitly identified planning request; use null and ask if none was chosen. This tool creates a DRAFT only.
     It does not save preferences or generate plans.
   `,
 
-  parameters: preferenceInputSchema,
+  parameters: preferenceInputSchema.extend({ request_id: z.number().int().positive().nullable() }),
 
-  async execute(input) {
+  async execute(input, runContext) {
     console.log(
       "[AI TOOL] interpret_timetable_preferences called"
     );
 
-    const result = buildPreferenceDraft(input);
-
+    let result = buildPreferenceDraft(input);
+    if (input.request_id !== null && runContext?.context?.studentId) {
+      try { result = await leo.stagePreferenceDraft(runContext.context, input.request_id, result); }
+      catch (error) { return JSON.stringify(leo.failure(error)); }
+    } else result = { ...result, request_id: null, binding_required: true };
+    if (runContext?.context) runContext.context.preferenceDraft = result;
     return JSON.stringify(result);
   }
 });

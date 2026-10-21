@@ -258,6 +258,23 @@ async function putIndex(planId, courseCode, body = {}) {
   });
 }
 
+// Locks constrain future regeneration; explicit edits retain their existing semantics.
+async function setIndexLock(planId, courseCode, body = {}) {
+  if (typeof body.locked !== "boolean") throw new PlanningError(400, "locked must be a boolean");
+  const code = text(courseCode, "course_code", 10).toUpperCase();
+  return transaction(async db => {
+    const plan = await getPlan(planId, db, true);
+    requireEditable(plan);
+    const [rows] = await db.query("SELECT locked FROM plan_course WHERE plan_id = ? AND course_code = ?", [plan.plan_id, code]);
+    if (!rows.length) throw new PlanningError(404, "Chosen course index not found");
+    if (Boolean(rows[0].locked) !== body.locked) {
+      await db.query("UPDATE plan_course SET locked = ? WHERE plan_id = ? AND course_code = ?", [body.locked, plan.plan_id, code]);
+      await invalidatePlan(db, plan.plan_id);
+    }
+    return { plan_id: plan.plan_id, course_code: code, locked: body.locked };
+  });
+}
+
 async function removeIndex(planId, courseCode) {
   const code = text(courseCode, "course_code", 10).toUpperCase();
   return transaction(async (db) => {
@@ -591,7 +608,7 @@ async function listPlanDetails(requestId) {
 
 module.exports = {
   PlanningError, createRequest, listRequests, getRequest, createPlan, listPlans,
-  getPlan, getPlanDetails, listPlanDetails, getIndexes, getClashes, previewIndex, putIndex, removeIndex,
+  describePlan, getPlan, getPlanDetails, listPlanDetails, getIndexes, getClashes, previewIndex, putIndex, removeIndex, setIndexLock,
   getPlanEligibility, getPlanValidation, selectPlan,
   addCourseToRequest, removeCourseFromRequest,
   validatePlanContents, evaluatePlanAcademics, readSchedules, transaction, integer,

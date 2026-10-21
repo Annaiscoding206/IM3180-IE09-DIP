@@ -1,114 +1,131 @@
-# Leo Assistant — Timetable Preference Integration
+# Leo preference and planning integration
 
-## 1. Overview
+Leo now connects interpretation to the existing planning services. Saved
+preferences, eligibility, curriculum progress, clash validation, ranking and
+final-selection validity have one backend authority. The model does not implement
+these rules or decide whether a database write succeeded.
 
-Leo Assistant can now interpret students' natural-language timetable preferences through the Smart STARS website and Telegram.
+## Workflow
 
-The AI produces structured preference drafts using the OpenAI Agents SDK and Zod validation.
+1. Use `list_planning_requests` to identify the student's intended request.
+2. `interpret_timetable_preferences` extracts preferences and an explicitly chosen
+   `request_id` (nullable when not yet known).
+3. Clarify unspecified strictness or incomplete time ranges. A draft can have
+   `no_preferences`, `clarification_required`, or `ready_for_confirmation` status.
+4. A bound draft is stored in `ai_preference_draft` for the owned conversation,
+   request and a fresh opaque token. This is draft state, **not** saved planning
+   preference persistence. New bound drafts supersede the previous token; a bound
+   `no_preferences` result clears the pending token without clearing saved rules.
+5. The backend renders the exact draft and replacement warning. The student sends
+   `CONFIRM <draft_id> FOR REQUEST <request_id>`, optionally followed by
+   `AND GENERATE`. The entire current message must match the command. “Okay”,
+   quoted text, earlier chat text and model-generated flags do not authorize it.
+6. Confirmation locks the request before any plan invalidation, verifies owned
+   conversation/draft/request and ready status, invokes the shared preference
+   replacement function, marks the draft saved and commits atomically.
+7. Optional generation uses the existing generation service in a separate
+   transaction. A generation failure leaves successfully confirmed preferences
+   saved and exposes the generation error separately. It never auto-finalizes.
 
-**Current scope:** Interpretation, clarification and conversational confirmation.
+Independent generation is `GENERATE REQUEST <id>` or
+`GENERATE REQUEST <id> FROM PLAN <source_plan_id>`. If any plan, including archived history, has locked
+indexes, the source plan must be explicit. `AND GENERATE` does not infer a source;
+use the independent command after confirmation when source selection is needed.
 
-**Pending integration:** Persisting confirmed preferences and generating/ranking timetable plans through the planning backend.
+Commands bypass model inference, so an already staged draft can be confirmed
+without an external OpenAI call. A token is valid only for its current conversation
+and request, and can be saved once. No production authentication system is implied.
 
-## 2. Completed AI Functionality
+## Interpretation and persistence payloads
 
-- Understand preferred and avoided weekdays.
-- Understand preferred and avoided class time ranges.
-- Identify optimization objectives such as minimizing campus days or timetable gaps.
-- Distinguish mandatory constraints (`HARD`) from flexible preferences (`SOFT`).
-- Ask for clarification when strictness or exact times are unclear.
-- Interpret preference updates across multiple conversation turns.
-- Maintain conversation continuity between the website and Telegram.
+The model tool input is:
 
-## 3. Structured Preference Data
+```json
+{
+  "request_id": 10,
+  "day_preferences": [{"day_of_week":"MON","preference_type":"PREFER","constraint_level":"SOFT"}],
+  "time_preferences": [{"description":"classes between nine and six","start_time":"09:00","end_time":"18:00","preference_type":"PREFER","constraint_level":"HARD"}],
+  "objectives": [{"objective_type":"MINIMIZE_SCHOOL_DAYS","priority":1}],
+  "clarification_questions": []
+}
+```
 
-### Day preferences
+Days are MON–SUN. Preference type is PREFER/AVOID. Interpretation permits
+HARD/SOFT/UNSPECIFIED and nullable time boundaries; persistence permits only
+complete valid HARD/SOFT rules. Exact HH:MM boundaries are requested rather than
+invented from words such as “morning.” Objectives also support MINIMIZE_GAPS;
+positive integer priority 1 has highest weight. Time descriptions are draft-only.
+The shared persistence validator rejects duplicates, invalid ranges and extra
+fields after the draft adapter extracts the three supported arrays.
 
-| Field | Accepted values |
+Ready output adds `draft_id`, `request_id`, `confirmation_command`,
+`requires_student_confirmation:true`, `saved_to_database:false` and
+`timetable_generated:false`. Confirmation replaces all saved day/time/objective
+arrays; it does not merge silently and never changes blocked periods. Clearing
+all saved preferences is supported through the Planner or preference PUT with
+three empty arrays; a no-preference interpretation is not a clear command.
+
+HARD PREFER days form a whitelist, not an attendance requirement. HARD PREFER
+windows are alternatives, with every class fully inside at least one window.
+HARD AVOID excludes matching days/overlapping times. Contradictions remain
+infeasible. The model must not weaken rules to obtain a timetable.
+
+## Tools and shared services
+
+| Tool | Shared backend authority |
 |---|---|
-| `day_of_week` | MON, TUE, WED, THU, FRI, SAT, SUN |
-| `preference_type` | PREFER, AVOID |
-| `constraint_level` | HARD, SOFT, UNSPECIFIED |
+| `get_student_academic_context` | Profile, Degree Audit or curriculum services; trusted identity only |
+| `list_planning_requests` | Owned request list |
+| `get_planning_context` | Request, saved preferences/blocks, detailed plans, current active selection |
+| `interpret_timetable_preferences` | Existing deterministic draft builder, shared preference validation, durable draft binding |
+| `save_confirmed_preferences` | Atomic shared preference replacement after exact current-message authorization |
+| `generate_timetable_plans` | Existing generator, shared summary/validation services |
+| `get_student_timetable` | Revalidated active plan; requests clarification if more than one request has a valid final timetable |
 
-### Time preferences
+Existing course and eligibility tools remain available. Trusted identity,
+conversation ID and the actual user message are provided in SDK run context, not
+model arguments. This follows the SDK's separation of tool arguments and local
+[run context](https://developers.openai.com/api/docs/guides/agents/define-agents).
 
-| Field | Description |
-|---|---|
-| `description` | Student's original time preference |
-| `start_time` | HH:MM or null |
-| `end_time` | HH:MM or null |
-| `preference_type` | PREFER, AVOID |
-| `constraint_level` | HARD, SOFT, UNSPECIFIED |
+Plan summaries expose indexes, every session, persisted rank/score, current
+comparison metrics, full validation and selection state. Saved rank/score can be
+null after invalidation. `metrics_scope` says that comparison metrics use current
+saved preferences. Stored SELECTED labels alone are insufficient: an active
+selection requires current `can_finalize`. Multiple valid selections in one
+request return an explicit ambiguity error; multiple matching requests ask the
+student for a request ID.
 
-### Planning objectives
+Generation failures preserve the existing structured reasons, evidence and
+remedies. `SEARCH_LIMIT_REACHED` is distinct from proven infeasibility. A reason
+may describe a rejected candidate or an observed conflict; Leo must not present
+sample evidence as a unique root cause or promise a remedy will be feasible.
 
-| Field | Accepted values |
-|---|---|
-| `objective_type` | MINIMIZE_SCHOOL_DAYS, MINIMIZE_GAPS |
-| `priority` | Positive integer; 1 is highest priority |
+## Website and Telegram
 
-The preference tool returns one of three statuses: `no_preferences`, `clarification_required`, or `ready_for_confirmation`. It also returns clarification questions and flags indicating that the draft is unconfirmed, unsaved and has not generated a timetable.
+Both channels call `askSmartStars` and persist through `conversationService`.
+`ai_active_conversation` holds the shared active conversation for DEMO001;
+messages retain website/Telegram provenance. Draft tokens survive reloads and
+channel switches. A foreign conversation cannot be read or used to save a draft.
 
-## 4. Example
+The website uses the local demo middleware. The Telegram bot maps only the
+configured allowlisted sender to DEMO001. No student identity is accepted from a
+message or model-generated argument. See [setup](SETUP.md) for flags and tokens.
 
-**Student request:**
+## Verification and limits
 
-"I want fewer days on campus, no Friday classes, and afternoon lessons from 1 PM to 6 PM."
+`backend/tests/finalIntegration.integration.test.js` exercises live MySQL/HTTP,
+actual SDK tool invocation and both channel labels with a substituted model
+runner. It checks exact confirmation, unresolved/UNSPECIFIED rejection, ownership,
+superseded/replayed tokens, rollback, shared generation, structured failure and
+active-plan retrieval. Full regressions run with `--test-concurrency=1` to avoid
+shared-database integration deadlocks. No Telegram network delivery or live model
+interpretation is claimed by those tests.
 
-**Expected interpretation:**
-
-- Objective: `MINIMIZE_SCHOOL_DAYS`, priority 1.
-- Day: `FRI`, `AVOID`, strictness requiring clarification unless specified.
-- Time: `13:00–18:00`, `PREFER`, strictness requiring clarification unless specified.
-
-After clarification, Leo presents the full draft for confirmation.
-
-## 5. Backend Person 2 — Integration Requirements
-
-The backend needs to provide authenticated planning-request-scoped operations to:
-
-1. Retrieve existing preferences for a planning request.
-2. Save or replace confirmed day preferences.
-3. Save or replace confirmed time preferences.
-4. Save or replace planning objectives.
-5. Generate valid timetable alternatives using the selected courses and available course indexes.
-6. Rank feasible alternatives based on soft preferences and optimization objectives.
-7. Return generated plans and their validation results.
-
-Existing database tables:
-
-- `planning_day_preference`
-- `planning_time_preference`
-- `planning_objective`
-
-**Important validation rules:**
-
-- `UNSPECIFIED` must be resolved before database persistence.
-- Time ranges must have valid start and end times.
-- Only authorized planning requests may be modified.
-- The backend must distinguish hard constraints from soft ranking preferences.
-- Generated plans must satisfy course eligibility and timetable clash checks.
-- If no feasible timetable exists, report that rather than creating an invalid plan.
-
-The exact API routes and request/response formats should be agreed with Backend Person 2 before Leo's persistence and generation tools are implemented.
-
-## 6. Current Limitations
-
-- Preference drafts are not saved as structured records in MySQL.
-- Conversational confirmation is not equivalent to a saved planning request.
-- Leo does not yet invoke an automatic timetable generator.
-- No preference-based plan rankings are available from Leo.
-- Draft updates currently depend on the retained conversation context; dedicated structured draft state is not implemented.
-- The current website student identity is local-demo-only, not production authentication.
-
-## 7. Next Integration Stage
-
-Once Backend Person 2's APIs are ready:
-
-1. Connect Leo's confirmed preference draft to the appropriate planning request.
-2. Add a backend-validated preference-saving AI tool.
-3. Add a tool to request generated timetable options A/B/C.
-4. Return validated plan summaries through both website and Telegram.
-5. Test preference changes, infeasible constraints, unauthorized access and generated-plan correctness.
-
-Leo must never claim that preferences were saved or plans generated unless the corresponding backend operation confirms success.
+Natural-language extraction still depends on model accuracy; the exact displayed
+draft and explicit confirmation are the review step. Only the current draft per
+conversation is kept. Preferences are full replacement and blocked periods are
+managed separately. Save/generate commits and subsequent chat-history writes are
+separate transactions: if history/network delivery fails after a planning commit,
+reload the saved request/plan before retrying. Confirmations cannot replay a saved
+draft; independent generation requests intentionally create a new batch. Calendar
+display is weekly, not a date-specific or exam-clash timetable.

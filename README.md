@@ -1,57 +1,38 @@
 # Smart STARS Companion
 
-A course-planning companion for exploring courses, checking academic eligibility,
-and preparing semester plans before official registration in STARS.
+A local course-planning prototype with Course Explorer, academic eligibility,
+Degree Audit, synthetic Programme Curriculum progress, saved preferences and
+blocked periods, manual index management, ranked Plan A/B/C generation,
+alternative-index suggestions, and validated final timetable selection.
 
-## Course Explorer frontend
+Leo can retrieve the student's current academic/planning context, interpret a
+preference draft, save it after explicit request-bound confirmation, and invoke
+the same generator. The website and allowlisted Telegram demo share conversation
+history. No official NTU integration or registration is performed.
 
-The current frontend implementation is a React/Vite Course Explorer connected
-to the existing Express/MySQL API. It reads courses, indexes, timetable slots,
-the demo student's completed courses, eligibility results, and the latest
-planning request from the project database. It includes:
+- [Local environment, database migrations and verification](docs/SETUP.md)
+- [Backend API contracts and examples](backend/docs/API.md)
+- [Leo confirmation and planning integration](docs/LEO_PREFERENCE_INTEGRATION.md)
 
-- course search and filtering;
-- eligibility and completion-status labels;
-- course details with database indexes and timetable slots;
-- add/remove course interactions;
-- selected AU and course summaries; and
-- responsive desktop and mobile layouts.
+Backend: `cd backend && npm ci && npm start` (127.0.0.1:5001).
+Frontend: `cd frontend && npm ci && npm run dev` (5173, API proxy to 5001).
+Configure the ignored `backend/.env` using `.env.example` and the setup guide first.
+Do not rerun the original schema/demo seeds against an existing database.
 
-Set up the database by running `database/01_schema.sql`,
-`database/02_course_data.sql`, `database/03_demo_data.sql`, and
-`database/05_course_types.sql` in that order, then create `backend/.env` as
-described in `backend/docs/API.md`. The last script is idempotent and also
-upgrades databases created before course-type filtering was added.
+Run backend live regressions sequentially:
 
-Start the backend in one PowerShell window:
-
-```powershell
+```sh
 cd backend
-npm install
-npm.cmd start
+RUN_MYSQL_TESTS=1 node --test --test-concurrency=1 tests/*.test.js
 ```
 
-Start the frontend in a second PowerShell window:
+Frontend checks:
 
-```powershell
+```sh
 cd frontend
-npm install
-npm.cmd run dev
+node --test tests/*.test.js
+npm run build
 ```
 
-Create a production build:
-
-```powershell
-cd frontend
-npm.cmd run build
-```
-
-The Vite development server proxies `/api` to `http://127.0.0.1:5000`. If the
-backend or database is unavailable, the page displays a connection error and
-does not fall back to simulated course data. Automatic timetable generation is
-intentionally outside the Course Explorer scope.
-
-## Backend
-
-The Express/MySQL backend is in `backend`. API details are documented in
-`backend/docs/API.md`, and database setup scripts are in `database`.
+Deterministic Leo tests substitute model output and use local MySQL; live
+OpenAI/Telegram probes are separate and optional. Never commit `.env` or tokens.

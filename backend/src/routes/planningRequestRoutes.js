@@ -21,6 +21,7 @@ router.delete("/:requestId/blocked-periods", preferences.clearBlocks);
 router.post("/", studentScope, createPlanningRequest);
 router.get("/", studentScope, listPlanningRequests);
 router.get("/:requestId", getPlanningRequest);
+router.get("/:requestId/active-plan", require("../controllers/planningRequestController").getActivePlan);
 router.post("/:requestId/plans", createPlan);
 router.get("/:requestId/plans", listPlans);
 

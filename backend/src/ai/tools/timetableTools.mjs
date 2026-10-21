@@ -1,6 +1,7 @@
 
 import { tool } from "@openai/agents";
 import { z } from "zod";
+import summaries from "../../services/planningSummaryService.js";
 import planService from "../../services/planService.js";
 
 // Retrieve the student's selected timetable.
@@ -9,7 +10,8 @@ import planService from "../../services/planService.js";
 export async function loadSelectedTimetable(
   studentId,
   academicYear = null,
-  semester = null
+  semester = null,
+  requestId = null
 ) {
   if (!studentId) {
     return {
@@ -31,7 +33,7 @@ export async function loadSelectedTimetable(
       semester === null ||
       String(request.semester) === String(semester);
 
-    return yearMatches && semesterMatches;
+    return yearMatches && semesterMatches && (requestId === null || request.request_id === requestId);
   });
 
   if (matchingRequests.length === 0) {
@@ -41,79 +43,20 @@ export async function loadSelectedTimetable(
     };
   }
 
-  // Step 3: Identify SELECTED plans.
   const selectedPlans = [];
-
+  const stale = [];
   for (const request of matchingRequests) {
-    const plans = await planService.listPlans(request.request_id);
-
-    for (const plan of plans) {
-      if (plan.status === "SELECTED") {
-        selectedPlans.push({ request, plan });
-      }
-    }
+    const active = await summaries.getActivePlan(request.request_id, studentId);
+    stale.push(...active.stale_plan_ids);
+    if (active.plan) selectedPlans.push({ request, plan: active.plan });
   }
-
-  if (selectedPlans.length === 0) {
-    return {
-      status: "no_selected_plan",
-      message: "No finalized plan is selected for this term."
-    };
-  }
-
-  if (selectedPlans.length > 1) {
-    return {
-      status: "clarification_required",
-      message: "Please specify the academic year and semester.",
-      available_terms: selectedPlans.map(({ request }) => ({
-        academic_year: request.academic_year,
-        semester: request.semester
-      }))
-    };
-  }
-
+  if (!selectedPlans.length) return { status: "no_selected_plan", stale_plan_ids: stale, message: "No currently valid finalized timetable exists in this scope." };
+  if (selectedPlans.length > 1) return { status: "clarification_required", message: "Specify the planning request ID; more than one active timetable matches.",
+    available_requests: selectedPlans.map(({ request }) => ({ request_id: request.request_id, academic_year: request.academic_year, semester: request.semester })) };
   const { request, plan } = selectedPlans[0];
+  return { request_id: request.request_id, academic_year: request.academic_year, semester: request.semester,
+    ...plan, plan_status: plan.status, status: "ok", missing_slot_indexes: plan.validation.timetable.missing_slot_indexes, timetable_complete: plan.validation.can_finalize, weekly_schedule_only: true, count: plan.sessions.length };
 
-  // Step 4: Double-check plan ownership.
-  const verifiedPlan = await planService.getPlan(plan.plan_id);
-
-  if (String(verifiedPlan.student_id) !== String(studentId)) {
-    throw new Error("Plan ownership verification failed.");
-  }
-
-  // Step 5: Reuse the existing timetable endpoint.
-  // This is a local development adapter, not a public URL.
-  const port = process.env.PORT || 5000;
-
-  const response = await fetch(
-    `http://127.0.0.1:${port}/api/plans/${plan.plan_id}/timetable`,
-    { signal: AbortSignal.timeout(5000) }
-  );
-
-  if (!response.ok) {
-    throw new Error(
-      `Timetable API failed with status ${response.status}`
-    );
-  }
-
-  const timetable = await response.json();
-
-  if (timetable.success !== true) {
-    throw new Error("Timetable retrieval was unsuccessful.");
-  }
-
-  return {
-    status: timetable.timetable_complete ? "ok" : "incomplete",
-    academic_year: request.academic_year,
-    semester: request.semester,
-    plan_id: plan.plan_id,
-    plan_name: plan.plan_name,
-    timetable_complete: timetable.timetable_complete,
-    missing_slot_indexes: timetable.missing_slot_indexes,
-    count: timetable.count,
-    weekly_schedule_only: true,
-    sessions: timetable.data
-  };
 }
 
 // OpenAI Agents SDK function tool.
@@ -129,10 +72,11 @@ export const getStudentTimetableTool = tool({
 
   parameters: z.object({
     academic_year: z.string().nullable(),
-    semester: z.number().int().nullable()
+    semester: z.number().int().nullable(),
+    request_id: z.number().int().positive().nullable()
   }),
 
-  async execute({ academic_year, semester }, runContext) {
+  async execute({ academic_year, semester, request_id }, runContext) {
     console.log("[AI TOOL] get_student_timetable called");
 
     const studentId = runContext?.context?.studentId;
@@ -140,7 +84,8 @@ export const getStudentTimetableTool = tool({
     const result = await loadSelectedTimetable(
       studentId,
       academic_year,
-      semester
+      semester,
+      request_id
     );
 
     return JSON.stringify(result);

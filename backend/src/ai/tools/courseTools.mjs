@@ -18,7 +18,7 @@ export async function loadCourseInformation(
   }
 
   // Reuse our existing Course Explorer API.
-  const port = process.env.PORT || 5000;
+  const port = process.env.PORT || 5001;
 
   const response = await fetch(
     `http://127.0.0.1:${port}/api/courses/${code}`,

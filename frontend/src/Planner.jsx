@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { api } from "./api";
+import PlannerPreferences from "./PlannerPreferences";
 import ReasonDialog from "./ReasonDialog";
 import { courseProblem, indexProblem } from "./reasonUtils";
 import "./planner.css";
 
-// Monday to Saturday calendar
-const DAYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT"];
+// Full teaching week
+const DAYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 
 const DAY_NAMES = [
   "Monday",
@@ -14,6 +15,7 @@ const DAY_NAMES = [
   "Thursday",
   "Friday",
   "Saturday",
+  "Sunday",
 ];
 
 const FIRST_HOUR = 8;
@@ -64,29 +66,6 @@ const overlapsHour = (slot, day, hour) => {
     start < (hour + 1) * 60 &&
     end > hour * 60
   );
-};
-
-const blockedHoursForSlots = (lessonSlots, blockedHours) => {
-  const overlaps = [];
-
-  for (const slot of lessonSlots) {
-    for (
-      let hour = FIRST_HOUR;
-      hour < LAST_HOUR;
-      hour += 1
-    ) {
-      const key = blockKey(slot.day_of_week, hour);
-
-      if (
-        blockedHours.includes(key) &&
-        overlapsHour(slot, slot.day_of_week, hour)
-      ) {
-        overlaps.push(key);
-      }
-    }
-  }
-
-  return [...new Set(overlaps)];
 };
 
 const readCalendarPrefs = () => {
@@ -482,8 +461,10 @@ export default function Planner({
   const [courseInput, setCourseInput] = useState("");
   const [onlyVacancies, setOnlyVacancies] = useState(false);
   const [featureMode, setFeatureMode] = useState(null);
-  const [calendarPrefs, setCalendarPrefs] =
-    useState(readCalendarPrefs);
+  const [blocks, setBlocks] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [comparisons, setComparisons] = useState([]);
+  const [generationFailure, setGenerationFailure] = useState(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -526,111 +507,52 @@ export default function Planner({
       Number(plan.plan_id) === Number(activePlanId)
   );
 
-  const prefKey =
-    requestId && activePlanId
-      ? `${requestId}:${activePlanId}`
-      : null;
-
-  const activePrefs = prefKey
-    ? calendarPrefs[prefKey] || {}
-    : {};
-
-  const blockedHours = Array.isArray(activePrefs.blocked)
-    ? activePrefs.blocked
-    : [];
-
-  const lockedIndexes = activePrefs.locked || {};
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(
-        PREFS_KEY,
-        JSON.stringify(calendarPrefs)
-      );
-    } catch {
-      // Storage may be disabled.
-    }
-  }, [calendarPrefs]);
-
-  const toggleHourBlock = (day, hour) => {
-    if (
-      !prefKey ||
-      featureMode !== "block" ||
-      busy
-    ) {
-      return;
-    }
-
-    const key = blockKey(day, hour);
-
-    if (
-      !blockedHours.includes(key) &&
-      slots.some((slot) =>
-        overlapsHour(slot, day, hour)
-      )
-    ) {
-      setError(
-        "A scheduled class already uses this hour. Clear or change its index before blocking that time."
-      );
-      return;
-    }
-
-    setError("");
-    setNotice("");
-
-    setCalendarPrefs((current) => {
-      const previous = current[prefKey] || {};
-
-      const oldBlocks = Array.isArray(previous.blocked)
-        ? previous.blocked
-        : [];
-
-      return {
-        ...current,
-        [prefKey]: {
-          ...previous,
-          blocked: oldBlocks.includes(key)
-            ? oldBlocks.filter(
-                (item) => item !== key
-              )
-            : [...oldBlocks, key],
-        },
-      };
-    });
+  const blockedHours = DAYS.flatMap(day => Array.from({ length: LAST_HOUR - FIRST_HOUR }, (_, i) => i + FIRST_HOUR)
+    .filter(hour => blocks.some(block => overlapsHour(block, day, hour))).map(hour => blockKey(day, hour)));
+  const lockedIndexes = Object.fromEntries(indexes.filter(i => i.locked).map(i => [i.course_code, i.index_no]));
+  const reloadRequest = async () => {
+    const [nextBlocks, nextPlans] = await Promise.all([api.blocks(requestId), api.plans(requestId)]);
+    setBlocks(nextBlocks); setPlans(nextPlans.filter(p => p.status !== "ARCHIVED"));
+    const details = await Promise.all(nextPlans.filter(p => p.status !== "ARCHIVED").map(p => api.planSummary(p.plan_id)));
+    setComparisons(details);
+    if (activePlanId) setSummary(details.find(p => p.plan_id === activePlanId) ?? null);
   };
-
-  const toggleLessonLock = (code, indexNo) => {
-    if (
-      !prefKey ||
-      featureMode !== "lock" ||
-      busy
-    ) {
-      return;
+  useEffect(() => {
+    if (!requestId) return;
+    let cancelled = false;
+    api.blocks(requestId).then(value => { if (!cancelled) setBlocks(value); }).catch(e => { if (!cancelled) setError(e.message); });
+    return () => { cancelled = true; };
+  }, [requestId]);
+  const toggleHourBlock = async (day, hour) => {
+    if (featureMode !== "block" || busy) return;
+    const start = `${String(hour).padStart(2, "0")}:00:00`;
+    const end = `${String(hour + 1).padStart(2, "0")}:00:00`;
+    const exact = blocks.find(b => b.day_of_week === day && b.start_time === start && b.end_time === end);
+    if (!exact && blocks.some(b => overlapsHour(b, day, hour))) {
+      setError("This hour contains a partial or longer blocked period. Remove it in Preferences and blocked periods."); return;
     }
-
-    setError("");
-    setNotice("");
-
-    setCalendarPrefs((current) => {
-      const previous = current[prefKey] || {};
-      const locked = { ...previous.locked };
-
-      if (
-        Number(locked[code]) === Number(indexNo)
-      ) {
-        delete locked[code];
-      } else {
-        locked[code] = Number(indexNo);
-      }
-
-      return {
-        ...current,
-        [prefKey]: {
-          ...previous,
-          locked,
-        },
-      };
-    });
+    setBusy(true); setError("");
+    try {
+      if (exact) await api.removeBlock(requestId, exact.block_id);
+      else await api.addBlock(requestId, { day_of_week: day, start_time: start, end_time: end });
+      await reloadRequest();
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  };
+  const toggleLessonLock = async (code) => {
+    if (featureMode !== "lock" || busy) return;
+    setBusy(true); setError("");
+    try { await api.lockIndex(activePlanId, code, !lockedIndexes[code]); await refreshTimetable(); }
+    catch (e) { setError(e.message); } finally { setBusy(false); }
+  };
+  const generate = async () => {
+    setBusy(true); setError(""); setGenerationFailure(null); setNotice("");
+    try {
+      const result = await api.generatePlans(requestId, activePlanId);
+      await reloadRequest();
+      setActivePlanId(result.plans[0].plan_id);
+      setNotice(`Generated ${result.plans.length} timetable option(s). Review and save your final choice.`);
+    } catch (e) { setError(e.message); setGenerationFailure(e.details); }
+    finally { setBusy(false); }
   };
 
   // Load the student's existing plans.
@@ -644,14 +566,17 @@ export default function Planner({
       setError("");
 
       try {
-        let next = await api.plans(requestId);
+        const existing = await api.plans(requestId);
+        let next = existing.filter(p => p.status !== "ARCHIVED");
 
         if (!next.length) {
+          let number = 1;
+          while (existing.some(p => p.plan_name === `Plan ${number}`)) number++;
           try {
             next = [
               await api.createPlan(
                 requestId,
-                "Plan 1"
+                `Plan ${number}`
               ),
             ];
           } catch (createError) {
@@ -659,13 +584,18 @@ export default function Planner({
               throw createError;
             }
 
-            next = await api.plans(requestId);
+            next = (await api.plans(requestId)).filter(p => p.status !== "ARCHIVED");
+            if (!next.length) throw createError;
           }
         }
 
         if (!cancelled) {
+          const details = await Promise.all(next.map(p => api.planSummary(p.plan_id)));
+          if (cancelled) return;
+          setComparisons(details);
           setPlans(next);
-          setActivePlanId(next[0].plan_id);
+          const active = await api.activePlan(requestId);
+          if (!cancelled) setActivePlanId(active.plan?.plan_id ?? next[0]?.plan_id);
         }
       } catch (loadError) {
         if (!cancelled) {
@@ -698,16 +628,18 @@ export default function Planner({
       setError("");
 
       try {
-        const [savedIndexes, timetable] =
+        const [savedIndexes, timetable, detail] =
           await Promise.all([
             api.planIndexes(activePlanId),
             api.planTimetable(activePlanId),
+            api.planSummary(activePlanId),
           ]);
 
         if (!cancelled) {
           setIndexes(savedIndexes);
           setSlots(timetable.data);
           setTimetableMeta(timetable);
+          setSummary(detail);
         }
       } catch (loadError) {
         if (!cancelled) {
@@ -726,72 +658,25 @@ export default function Planner({
   }, [activePlanId]);
 
   const refreshTimetable = async () => {
-    const [savedIndexes, timetable] =
+    const [savedIndexes, timetable, detail] =
       await Promise.all([
         api.planIndexes(activePlanId),
         api.planTimetable(activePlanId),
+        api.planSummary(activePlanId),
       ]);
 
     setIndexes(savedIndexes);
     setSlots(timetable.data);
     setTimetableMeta(timetable);
+    setSummary(detail);
+    await reloadRequest();
   };
 
-  // Switch between the three plans.
-  const switchPlan = async (position) => {
-    if (!requestId || busy || loading) return;
-
-    setError("");
-    setNotice("");
-    setExpandedCourse(null);
-    setFeatureMode(null);
-
-    if (plans[position]) {
-      setSlots([]);
-      setIndexes([]);
-      setActivePlanId(plans[position].plan_id);
-      return;
-    }
-
-    setBusy(true);
-
-    try {
-      let next;
-      let chosen;
-
-      try {
-        chosen = await api.createPlan(
-          requestId,
-          `Plan ${position + 1}`
-        );
-
-        next = [...plans, chosen];
-      } catch (createError) {
-        if (createError.status !== 409) {
-          throw createError;
-        }
-
-        next = await api.plans(requestId);
-
-        chosen = next.find(
-          (plan) =>
-            plan.plan_name === `Plan ${position + 1}`
-        );
-
-        if (!chosen) {
-          throw createError;
-        }
-      }
-
-      setSlots([]);
-      setIndexes([]);
-      setPlans(next);
-      setActivePlanId(chosen.plan_id);
-    } catch (changeError) {
-      setError(changeError.message);
-    } finally {
-      setBusy(false);
-    }
+  // Generated alternatives and existing manual/selected plans remain accessible.
+  const switchPlan = (position) => {
+    if (!requestId || busy || loading || !plans[position]) return;
+    setError(""); setNotice(""); setExpandedCourse(null); setFeatureMode(null);
+    setSummary(null); setSlots([]); setIndexes([]); setActivePlanId(plans[position].plan_id);
   };
 
   const expandIndexes = async (code) => {
@@ -892,27 +777,7 @@ export default function Planner({
             indexNo,
             null,
             null,
-            `Index ${indexNo} has a lesson outside the Monday–Saturday calendar. Please choose another index.`
-          )
-        );
-        return;
-      }
-
-      const overlappingBlocks = blockedHoursForSlots(
-        candidateSlots,
-        blockedHours
-      );
-
-      if (overlappingBlocks.length) {
-        setProblem(
-          indexProblem(
-            code,
-            indexNo,
-            null,
-            null,
-            `Index ${indexNo} overlaps your red blocked hours (${overlappingBlocks.join(
-              ", "
-            )}). Unblock those hours or choose another index.`
+            `Index ${indexNo} has a lesson outside the Monday–Sunday calendar. Please choose another index.`
           )
         );
         return;
@@ -952,16 +817,7 @@ export default function Planner({
 
       setExpandedCourse(null);
 
-      setPlans((current) =>
-        current.map((plan) =>
-          plan.plan_id === activePlanId
-            ? {
-                ...plan,
-                status: "GENERATED",
-              }
-            : plan
-        )
-      );
+      await reloadRequest();
     } catch (changeError) {
       setProblem(
         indexProblem(
@@ -1001,13 +857,6 @@ export default function Planner({
         `${code} index removed from this plan (course still selected).`
       );
 
-      setPlans((current) =>
-        current.map((plan) =>
-          plan.plan_id === activePlanId
-            ? { ...plan, status: "GENERATED" }
-            : plan
-        )
-      );
     } catch (changeError) {
       setError(changeError.message);
     } finally {
@@ -1046,6 +895,7 @@ export default function Planner({
 
     try {
       await onAddCourse(code);
+      await reloadRequest();
 
       setCourseInput("");
       setNotice(
@@ -1081,29 +931,6 @@ export default function Planner({
         return next;
       });
 
-      setCalendarPrefs((current) =>
-        Object.fromEntries(
-          Object.entries(current).map(
-            ([key, prefs]) => {
-              if (!key.startsWith(`${requestId}:`)) {
-                return [key, prefs];
-              }
-
-              const locked = {
-                ...(prefs.locked || {}),
-              };
-
-              delete locked[code];
-
-              return [
-                key,
-                { ...prefs, locked },
-              ];
-            }
-          )
-        )
-      );
-
       try {
         const [
           savedIndexes,
@@ -1118,7 +945,8 @@ export default function Planner({
         setIndexes(savedIndexes);
         setSlots(timetable.data);
         setTimetableMeta(timetable);
-        setPlans(refreshedPlans);
+        setPlans(refreshedPlans.filter(p => p.status !== "ARCHIVED"));
+        await reloadRequest();
 
         setNotice(
           `${code} and its indexes were removed from all plans.`
@@ -1181,18 +1009,7 @@ export default function Planner({
 
       await api.selectPlan(activePlanId);
 
-      setPlans((current) =>
-        current.map((plan) => ({
-          ...plan,
-          status:
-            plan.plan_id === activePlanId
-              ? "SELECTED"
-              : plan.status === "SELECTED"
-              ? "GENERATED"
-              : plan.status,
-        }))
-      );
-
+      await reloadRequest();
       setNotice(
         `${
           activePlan?.plan_name || "Plan"
@@ -1336,7 +1153,7 @@ export default function Planner({
             <h2>Plan</h2>
 
             <div className="planner-plan-buttons">
-              {[0, 1, 2].map((position) => (
+              {plans.map((plan, position) => (
                 <button
                   key={position}
                   type="button"
@@ -1359,13 +1176,13 @@ export default function Planner({
                     switchPlan(position)
                   }
                 >
-                  {position + 1}
+                  {plan.plan_name.replace(/^AUTO (Plan [ABC]) #\d+$/, "$1")}
                 </button>
               ))}
             </div>
 
             <small className="planner-muted">
-              {activePlan?.status === "SELECTED"
+              {activePlan?.active_selection
                 ? "Confirmed plan"
                 : "Each plan has its own indexes"}
             </small>
@@ -1544,7 +1361,7 @@ export default function Planner({
 
             <small className="planner-muted">
               {featureMode === "block"
-                ? "Click an empty hour to block it."
+                ? "Click an hour to save or remove a block."
                 : featureMode === "lock"
                 ? "Click a class to lock its index."
                 : `${
@@ -1571,8 +1388,8 @@ export default function Planner({
             <button
               type="button"
               className="planner-generate"
-              disabled
-              title="Automatic generation is awaiting Backend Person 2 integration"
+              disabled={busy || loading || !requestId || !selectedCodes.length}
+              onClick={generate}
             >
               Generate
             </button>
@@ -1595,14 +1412,26 @@ export default function Planner({
           </div>
 
           <p className="planner-control-help">
-            Blocked hours and locks are stored in this
-            browser for each plan. Generate needs
-            Backend Person 2 to enforce them; Save
-            confirms manual indexes only.
+            Blocked periods are saved for this request. Locks preserve indexes when generating from the displayed plan. Save validates and selects your final timetable.
           </p>
         </aside>
       </div>
 
+      {comparisons.length > 0 && <div className="planner-comparison"><table>
+        <caption>Plan comparison — current saved preferences</caption>
+        <thead><tr><th>Plan</th><th>Rank</th><th>Saved score</th><th>Campus days</th><th>Gap minutes</th><th>Validation</th></tr></thead>
+        <tbody>{comparisons.map(p => <tr key={p.plan_id}><td>{p.plan_name}{p.active_selection ? " (final choice)" : ""}</td><td>{p.rank_no ?? "—"}</td><td>{p.match_score ?? "—"}</td><td>{p.metrics?.campus_days ?? "—"}</td><td>{p.metrics?.total_gap_minutes ?? "—"}</td><td>{p.validation.can_finalize ? "Ready" : "Needs review"}</td></tr>)}</tbody>
+      </table></div>}
+      {requestId && <PlannerPreferences key={requestId} requestId={requestId} blocks={blocks} busy={busy}
+        onBusy={setBusy} onError={setError} onChanged={reloadRequest} />}
+      {summary?.metrics && <p className="planner-control-help">{summary.label}: rank {summary.rank_no ?? "unranked"} · saved score {summary.match_score ?? "not ranked"} · {summary.metrics.campus_days} campus days · {summary.metrics.total_gap_minutes} gap minutes · {summary.validation.can_finalize ? "Ready to finalize" : "Needs review"}. Metrics reflect saved preferences.</p>}
+      {summary?.sessions?.length > 0 && <details className="planner-preferences"><summary>All sessions for {summary.label}</summary>
+        {summary.sessions.map(s => <p key={`${s.course_code}-${s.index_no}-${s.slot_id}`}>{s.course_code} / {s.index_no}: {formatSession(s)} · {s.class_type} · weeks {s.teaching_weeks || "unspecified"}</p>)}
+      </details>}
+      {generationFailure && <div role="alert"><strong>{generationFailure.code}</strong>
+        {(generationFailure.reasons || []).map((r, i) => <p key={i}>{r.course_code} {r.code}: {r.explanation}</p>)}
+        {(generationFailure.suggestions || []).map((r, i) => <p key={i}>{r.explanation || r.action}</p>)}
+      </div>}
       <section
         className="planner-selected-panel"
         aria-label="Selected courses and indexes"
@@ -1749,7 +1578,7 @@ export default function Planner({
                         chosen.index_no
                       ) && (
                       <p className="planner-locked-note">
-                        Index locked on this device.
+                        Index locked in this plan.
                         Use the Lock tool and click
                         the class to unlock.
                       </p>

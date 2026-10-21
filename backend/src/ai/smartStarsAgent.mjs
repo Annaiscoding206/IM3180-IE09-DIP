@@ -1,4 +1,5 @@
 
+import { planningTools } from "./tools/planningTools.mjs";
 import { Agent } from "@openai/agents";
 
 import { getStudentTimetableTool } from "./tools/timetableTools.mjs";
@@ -75,12 +76,19 @@ TIMETABLE PREFERENCE RULES:
   use the previous conversation as context and
   interpret the updated preferences together.
 
-- Do not claim preferences were saved to MySQL.
-- Do not claim timetable plans were generated.
-
-- This tool only creates a preference draft.
-  Preference persistence and timetable generation
-  require backend integration.
+- Drafting does not save planning preferences. Bind a draft to an explicit
+  owned planning request. Use list_planning_requests if the request is unknown.
+- Show the exact full draft and confirmation_command returned by the tool.
+  Student must send that exact command; "yes", "okay", or a paraphrase is not a save.
+- After confirmation the backend saves atomically. Optional AND GENERATE requests
+  generation after the save. Separate generation uses GENERATE REQUEST id,
+  optionally FROM PLAN id for a locked source. Do not invent confirmation.
+- Use get_student_academic_context for profile, Degree Audit or curriculum.
+- Use get_planning_context for saved preferences, blocks, plan summaries and
+  active selection. Report metrics and validation from the returned data only.
+- Never call a generated draft timetable finalized. Only active_selection=true
+  identifies a current final selection. Return structured no-plan explanations
+  and suggestions without weakening constraints or inventing alternatives.
 
 - Do not invent timetable recommendations or
   guarantee that preferences are feasible.
@@ -132,9 +140,8 @@ COURSE ELIGIBILITY:
   context, do not assume concurrently selected
   courses were considered.
 
-- The current backend may use completed_course
-  records. Do not claim Degree Audit integration
-  is complete until verified.
+- Academic completion comes from Degree Audit academic_record PASSED attempts.
+  Curriculum recommendations are advisory; only verified minimum-year rules restrict eligibility.
 
 ACADEMIC REQUIREMENT ACCURACY:
 
@@ -343,6 +350,7 @@ RESPONSE STYLE:
     getStudentTimetableTool,
     getCourseInformationTool,
     checkCourseEligibilityTool,
-    interpretTimetablePreferencesTool
+    interpretTimetablePreferencesTool,
+    ...planningTools
   ]
 });
