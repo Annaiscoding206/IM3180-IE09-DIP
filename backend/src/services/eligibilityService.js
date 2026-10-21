@@ -1,3 +1,4 @@
+const { evaluateCurriculumYear } = require("./curriculumRulesService");
 const pool = require("../config/db");
 const { checkCorequisites } = require("./corequisiteService");
 const { checkMutualExclusions } = require("./mutualExclusionService");
@@ -22,7 +23,7 @@ const evaluateEligibility = async (
   planCourseCodes = null
 ) => {
   const [students] = await db.query(
-    `SELECT student_id, programme FROM student WHERE student_id = ? LIMIT 1`,
+    `SELECT student_id, programme, study_year, admission_year, admission_route FROM student WHERE student_id = ? LIMIT 1`,
     [studentId]
   );
   if (students.length === 0) {
@@ -71,6 +72,7 @@ const evaluateEligibility = async (
   const completed = new Set(
     completion.passed_course_codes.map(normalizeCode)
   );
+  const studyYear = await evaluateCurriculumYear(student, course.course_code, db);
   const alreadyCompleted = completed.has(normalizeCode(course.course_code));
   let selectedCourseCodes = [];
 
@@ -145,7 +147,8 @@ const mutualExclusionResult = checkMutualExclusions(
     rule.restriction_type === "ONLY_AVAILABLE"
   );
 
-  // Student has no cohort/admission fields. Do not infer a cohort from study_year.
+  // Legacy programme_restriction.cohort is unstructured text, not the new numeric
+  // curriculum admission_year. Do not guess how those historical labels map.
   // A cohort-only allowlist may affect any programme; a cohort-only denial
   // matters only for its named programme. Report uncertainty and block adding
   // until it can be resolved, without claiming the student violates that rule.
@@ -156,6 +159,9 @@ const mutualExclusionResult = checkMutualExclusions(
 
   let programmeEligible = true;
   const reasons = [];
+  if (studyYear.eligible !== true) reasons.push(studyYear.eligible === false
+    ? `Verified curriculum rule requires study year ${studyYear.minimum_study_year} or later`
+    : "Curriculum study-year eligibility requires review");
   if (alreadyCompleted) reasons.push("Course has already been passed and cannot be selected again");
   if (mutualExclusionResult.conflicting_completed_courses.length > 0) {
   reasons.push(
@@ -197,6 +203,8 @@ if (mutualExclusionResult.conflicting_selected_courses.length > 0) {
     student_id: student.student_id,
     course_code: course.course_code,
     already_completed: alreadyCompleted,
+    study_year_eligible: studyYear.eligible,
+    curriculum_year_rule: studyYear,
     request_id: requestId,
     corequisite_context:
       planCourseCodes !== null
@@ -217,16 +225,18 @@ if (mutualExclusionResult.conflicting_selected_courses.length > 0) {
       mutualExclusionResult.conflicting_selected_courses,
     can_select:
       !alreadyCompleted &&
+      studyYear.eligible === true &&
       prerequisiteEligible &&
       programmeEligible === true &&
       mutualExclusionResult.mutual_exclusion_eligible,
     eligible:
       !alreadyCompleted &&
+      studyYear.eligible === true &&
       prerequisiteEligible &&
       corequisiteResult.corequisite_eligible &&
       programmeEligible === true &&
       mutualExclusionResult.mutual_exclusion_eligible,
-    requires_review: programmeEligible === null,
+    requires_review: programmeEligible === null || studyYear.eligible === null,
     missing_prerequisite_groups: missingGroups,
     // Kept for existing clients; these are alternatives in UNSATISFIED groups,
     // not a list of courses the student must all complete.

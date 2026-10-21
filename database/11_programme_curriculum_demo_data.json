@@ -1,0 +1,32 @@
+{
+  "student_id": "DEMO001",
+  "curriculum": {
+    "curriculum_key": "DEMO_IEM_2024_DIRECT_V1",
+    "title": "Synthetic IEM 2024 Direct Entry Demo Curriculum",
+    "programme": "IEM",
+    "admission_year": 2024,
+    "admission_route": "DIRECT_ENTRY",
+    "is_demo": 1,
+    "description": "Synthetic prototype subset, not an official NTU curriculum or graduation audit. DA-prefixed requirements and the DA6001 minimum-year rule are fictional demo rules. Recommendations for catalogue courses are advisory."
+  },
+  "categories": [
+    { "category_code": "CORE", "title": "Demo core requirements", "required_au": 12 },
+    { "category_code": "MPE", "title": "Demo major electives", "required_au": 7 },
+    { "category_code": "ICC", "title": "Demo interdisciplinary common core", "required_au": 2 },
+    { "category_code": "BDE", "title": "Demo broadening electives", "required_au": 3 }
+  ],
+  "groups": [
+    { "category_code": "MPE", "group_code": "ENGINEERING", "title": "Demo engineering options", "required_au": 7 },
+    { "category_code": "BDE", "group_code": "BROADENING", "title": "Demo broadening options", "required_au": 3 }
+  ],
+  "courses": [
+    { "course_code": "DA1001", "course_title": "Demo Academic Foundations", "category_code": "CORE", "group_code": null, "is_required": 1, "recommended_study_year": 1, "recommended_semester": 1, "verified_min_study_year": null, "verification_source": null },
+    { "course_code": "IE2110", "course_title": "Demo core requirement: IE2110", "category_code": "CORE", "group_code": null, "is_required": 1, "recommended_study_year": 2, "recommended_semester": 1, "verified_min_study_year": null, "verification_source": null },
+    { "course_code": "IE3014", "course_title": "Demo core requirement: IE3014", "category_code": "CORE", "group_code": null, "is_required": 1, "recommended_study_year": 3, "recommended_semester": 1, "verified_min_study_year": null, "verification_source": null },
+    { "course_code": "DA1002", "course_title": "Demo Engineering Practice", "category_code": "MPE", "group_code": "ENGINEERING", "is_required": 0, "recommended_study_year": 2, "recommended_semester": 2, "verified_min_study_year": null, "verification_source": null },
+    { "course_code": "IE3102", "course_title": "Microprocessors", "category_code": "MPE", "group_code": "ENGINEERING", "is_required": 0, "recommended_study_year": 3, "recommended_semester": 2, "verified_min_study_year": null, "verification_source": null },
+    { "course_code": "DA6001", "course_title": "Synthetic Advanced Demo Elective", "category_code": "MPE", "group_code": "ENGINEERING", "is_required": 0, "recommended_study_year": 4, "recommended_semester": 1, "verified_min_study_year": 3, "verification_source": "SYNTHETIC_DEMO_RULE: DA6001 requires year 3; not an NTU policy" },
+    { "course_code": "DA2001", "course_title": "Synthetic Common Core Seminar", "category_code": "ICC", "group_code": null, "is_required": 1, "recommended_study_year": 1, "recommended_semester": 2, "verified_min_study_year": null, "verification_source": null },
+    { "course_code": "CS2024", "course_title": "Web Design & Technologies", "category_code": "BDE", "group_code": "BROADENING", "is_required": 0, "recommended_study_year": 2, "recommended_semester": 1, "verified_min_study_year": null, "verification_source": null }
+  ]
+}

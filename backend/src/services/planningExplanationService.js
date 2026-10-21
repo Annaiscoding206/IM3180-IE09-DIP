@@ -10,10 +10,11 @@ function academicReasons(eligibility) {
     const base = { course_code: course.course_code, index_change_can_resolve: false };
     if (course.already_completed) reasons.push({ ...base, code: "COURSE_ALREADY_COMPLETED",
       explanation: "This course has a passed academic record and cannot be selected again." });
-    if (!course.prerequisite_eligible || course.programme_eligible !== true) reasons.push({ ...base, code: "COURSE_INELIGIBLE",
+    if (!course.prerequisite_eligible || course.programme_eligible !== true || course.study_year_eligible === false || course.study_year_eligible === null) reasons.push({ ...base, code: "COURSE_INELIGIBLE",
+      study_year_eligible: course.study_year_eligible, curriculum_year_rule: course.curriculum_year_rule,
       prerequisite_eligible: course.prerequisite_eligible, programme_eligible: course.programme_eligible,
       requires_review: course.requires_review, missing_prerequisite_groups: course.missing_prerequisite_groups,
-      explanation: "Prerequisite or programme eligibility is not satisfied or cannot be confirmed; changing the index does not resolve it." });
+      explanation: "Prerequisite, programme or verified study-year eligibility is not satisfied or cannot be confirmed; changing the index does not resolve it." });
     if (!course.corequisite_eligible) reasons.push({ ...base, code: "COREQUISITE_UNSATISFIED",
       missing_corequisite_groups: course.missing_corequisite_groups,
       explanation: "Complete or select at least one alternative in each missing corequisite group, and include the selected corequisite in the plan." });

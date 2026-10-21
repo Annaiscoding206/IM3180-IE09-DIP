@@ -158,6 +158,7 @@ function setup(change = () => {}) {
       "./corequisiteService": require("../src/services/corequisiteService"),
       "./mutualExclusionService": require("../src/services/mutualExclusionService"),
       "./degreeAuditService": require("../src/services/degreeAuditService"),
+      "./curriculumRulesService": require("../src/services/curriculumRulesService"),
     }
   );
   const planService = loadModule("backend/src/services/planService.js", {
@@ -167,7 +168,8 @@ function setup(change = () => {}) {
     "./hardConstraintService": require("../src/services/hardConstraintService"),
   });
   const dependencies = { "../config/db": db, "../services/eligibilityService": service, "../services/planService": planService,
-    "../services/degreeAuditService": require("../src/services/degreeAuditService") };
+    "../services/degreeAuditService": require("../src/services/degreeAuditService"),
+    "../services/curriculumService": require("../src/services/curriculumService") };
   const student = loadModule("backend/src/controllers/studentController.js", dependencies);
   const plan = loadModule("backend/src/controllers/planController.js", dependencies);
   async function invoke(handler, req) {

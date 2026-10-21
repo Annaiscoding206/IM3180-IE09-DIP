@@ -1,12 +1,9 @@
 const pool = require("../config/db");
-const { getCompletionSummary } = require("../services/degreeAuditService");
+const { getCourseAnnotations } = require("../services/curriculumService");
 
 async function completionAnnotation(res) {
   const student = res.locals?.authenticatedStudentId;
-  if (!student) return course => course;
-  const completed = new Set((await getCompletionSummary(student)).passed_course_codes);
-  return course => ({ ...course, is_completed: completed.has(course.course_code.toUpperCase()),
-    completion_status: completed.has(course.course_code.toUpperCase()) ? "Completed" : "Not completed" });
+  return student ? getCourseAnnotations(student) : course => course;
 }
 
 class CourseInputError extends Error {}

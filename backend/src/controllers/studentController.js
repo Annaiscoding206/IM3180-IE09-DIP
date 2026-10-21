@@ -1,3 +1,4 @@
+const { getCurriculumOverview } = require("../services/curriculumService");
 const pool = require("../config/db");
 const { evaluateEligibility, EligibilityNotFoundError } = require("../services/eligibilityService");
 const { getCompletionSummary } = require("../services/degreeAuditService");
@@ -12,6 +13,8 @@ const getAllStudents = async (req, res) => {
         student_name,
         programme,
         study_year,
+        admission_year,
+        admission_route,
         created_at
       FROM student
       `
@@ -44,6 +47,8 @@ const getStudentById = async (req, res) => {
         student_name,
         programme,
         study_year,
+        admission_year,
+        admission_route,
         created_at
       FROM student
       WHERE student_id = ?
@@ -66,6 +71,7 @@ const getStudentById = async (req, res) => {
         ...students[0],
         completed_courses: audit.passed_course_codes,
         degree_audit_summary: audit,
+        curriculum_progress: await getCurriculumOverview(studentId),
       },
     });
   } catch (error) {

@@ -16,7 +16,7 @@ async function readRecords(studentId, db = pool) {
 // Attempts remain intact. Each distinct PASSED course earns its maximum KNOWN
 // passed-attempt AU once, never the sum of repeated attempts. NULL credit is
 // unknown, not zero: return the known subtotal and an explicit completeness flag.
-function summarizeRecords(records) {
+function passedCourseCredits(records) {
   const passed = new Map();
   for (const row of records) {
     if (row.result !== "PASSED") continue;
@@ -25,6 +25,11 @@ function summarizeRecords(records) {
     const au = row.earned_au == null ? null : Number(row.earned_au);
     passed.set(code, au == null ? previous ?? null : Math.max(previous ?? 0, au));
   }
+  return passed;
+}
+
+function summarizeRecords(records) {
+  const passed = passedCourseCredits(records);
   const unknown = [...passed].filter(([, au]) => au == null).map(([code]) => code).sort();
   return { record_count: records.length,
     passed_attempts: records.filter(r => r.result === "PASSED").length,
@@ -118,4 +123,4 @@ async function importDemoRecords(studentId, records) {
   finally { db.release(); }
 }
 
-module.exports = { readRecords, summarizeRecords, getCompletionSummary, getDegreeAudit, importDemoRecords, validateDemoRecord };
+module.exports = { passedCourseCredits, readRecords, summarizeRecords, getCompletionSummary, getDegreeAudit, importDemoRecords, validateDemoRecord };
