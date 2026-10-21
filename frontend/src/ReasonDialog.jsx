@@ -89,6 +89,17 @@ export default function ReasonDialog({ problem, onClose }) {
             </div>
           )}
 
+          {problem.warnings?.length > 0 && (
+            <div className="reason-dialog-details">
+              <strong>Additional information</strong>
+              <ul>
+                {problem.warnings.map((warning, index) => (
+                  <li key={index}>{warning}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {problem.hint && (
             <p className="reason-dialog-hint">
               {problem.hint}

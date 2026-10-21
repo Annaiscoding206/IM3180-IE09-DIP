@@ -52,7 +52,42 @@ async function createRequest(body = {}) {
   );
   return getRequest(result.insertId);
 }
+async function updateTargetAu(requestId, authenticatedStudentId, body = {}) {
+  const id = integer(requestId, "requestId");
+  const studentId = text(authenticatedStudentId, "student_id", 15);
+  const targetAu = integer(body.target_au, "target_au");
 
+  // Students can choose a target between 3 and 30 AU.
+  if (targetAu < 3 || targetAu > 30) {
+    throw new PlanningError(
+      400,
+      "target_au must be between 3 and 30"
+    );
+  }
+
+  // Verify that this planning request belongs to the student.
+  const [requests] = await pool.query(
+    `SELECT request_id
+     FROM planning_request
+     WHERE request_id = ? AND student_id = ?`,
+    [id, studentId]
+  );
+
+  if (!requests.length) {
+    throw new PlanningError(404, "Planning request not found");
+  }
+
+  // Update only the target AU.
+  await pool.query(
+    `UPDATE planning_request
+     SET target_au = ?
+     WHERE request_id = ? AND student_id = ?`,
+    [targetAu, id, studentId]
+  );
+
+  // Return the updated planning request.
+  return getRequest(id);
+}
 async function listRequests(studentId) {
   const id = await requireStudent(studentId);
   const [rows] = await pool.query("SELECT * FROM planning_request WHERE student_id = ? ORDER BY request_id", [id]);
@@ -607,7 +642,7 @@ async function listPlanDetails(requestId) {
 }
 
 module.exports = {
-  PlanningError, createRequest, listRequests, getRequest, createPlan, listPlans,
+  PlanningError, createRequest, updateTargetAu, listRequests, getRequest, createPlan, listPlans,
   describePlan, getPlan, getPlanDetails, listPlanDetails, getIndexes, getClashes, previewIndex, putIndex, removeIndex, setIndexLock,
   getPlanEligibility, getPlanValidation, selectPlan,
   addCourseToRequest, removeCourseFromRequest,

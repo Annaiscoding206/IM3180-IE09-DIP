@@ -1,6 +1,11 @@
 const express = require("express");
 const {
-  createPlanningRequest, listPlanningRequests, getPlanningRequest, createPlan, listPlans,
+  createPlanningRequest,
+  listPlanningRequests,
+  getPlanningRequest,
+  updateTargetAu,
+  createPlan,
+  listPlans,
 } = require("../controllers/planningRequestController");
 
 const router = express.Router();
@@ -20,6 +25,7 @@ router.delete("/:requestId/blocked-periods/:blockId", preferences.removeBlock);
 router.delete("/:requestId/blocked-periods", preferences.clearBlocks);
 router.post("/", studentScope, createPlanningRequest);
 router.get("/", studentScope, listPlanningRequests);
+router.patch("/:requestId/target-au", updateTargetAu);
 router.get("/:requestId", getPlanningRequest);
 router.get("/:requestId/active-plan", require("../controllers/planningRequestController").getActivePlan);
 router.post("/:requestId/plans", createPlan);

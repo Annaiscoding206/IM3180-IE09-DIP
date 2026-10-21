@@ -526,6 +526,9 @@ function App() {
               onAddCourse={(code) => changeCourse(code)}
               onRemoveCourse={(code) => changeCourse(code, true)}
               onBackToExplorer={() => setPage("explorer")}
+              onTargetAuUpdated={(updatedRequest) =>
+                setPlanningRequest(updatedRequest)
+              }
             />
           ) : (
             <>
@@ -537,19 +540,11 @@ function App() {
                   </p>
                   <h1>Course Explorer</h1>
                   <p className="hero-copy">
-                    Explore courses with your academic record and
-                    curriculum in view.
+                    Explore available courses, check eligibility and
+                    prerequisites, and add courses to your semester plan.
                   </p>
                 </div>
 
-                <button
-                  className="degree-audit"
-                  type="button"
-                  title="Student profile page coming soon"
-                >
-                  Degree audit &amp; curriculum{" "}
-                  <span aria-hidden="true">↗</span>
-                </button>
               </section>
 
               <section

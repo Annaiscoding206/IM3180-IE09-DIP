@@ -136,61 +136,113 @@ const describeConflict = (item) => {
   return item?.message || "Two lesson sessions overlap.";
 };
 
-export const indexProblem = (
-  code,
-  indexNo,
-  error,
-  validation,
-  localReason
-) => {
-  const result =
-    validation ||
-    error?.details?.validation ||
-    error?.details?.data?.validation ||
-    {};
+const timetableReasons = (value) => [
+  ...list(value?.conflicts).map(describeConflict),
+  ...list(value?.missing_slot_indexes).map((item) =>
+    [item.course_code || "Course", "index", item.index_no ?? "unknown", "has no timetable sessions."].join(" ")),
+  ...list(value?.data_issues).map((item) => item.message || item.reason),
+];
 
-  const reasons = [];
-
-  reasons.push(...list(result.conflicts).map(describeConflict));
-
-  reasons.push(
-    ...list(result.missing_slot_indexes).map(
-      (item) =>
-        `${item.course_code || "Course"} index ${
-          item.index_no ?? "unknown"
-        } has no timetable sessions.`
-    )
-  );
-
-  reasons.push(
-    ...list(result.data_issues).map(
-      (item) => item.message || item.reason
-    )
-  );
-
-  reasons.push(
-    ...list(result.warnings).map(
-      (item) =>
-        typeof item === "string" ? item : item?.message
-    )
-  );
-
-  const eligibility = error?.details?.eligibility;
-
-  if (eligibility?.message) {
-    reasons.push(eligibility.message);
+const constraintReason = (item) => {
+  const slot = item.slot || {};
+  const identity = [slot.course_code, slot.index_no, slot.day_of_week,
+    [shortTime(slot.start_time), shortTime(slot.end_time)].filter(Boolean).join("–")]
+    .filter(Boolean).join(" ");
+  switch (item.code) {
+    case "BLOCKED_PERIOD":
+      return identity + " overlaps a saved blocked period (" +
+        [shortTime(item.block?.start_time), shortTime(item.block?.end_time)].join("–") + ").";
+    case "HARD_PREFER_DAY":
+      return identity + " falls outside the allowed days: " + list(item.allowed_days).join(", ") + ".";
+    case "HARD_AVOID_DAY":
+      return identity + " is on a day you marked as a hard avoid rule.";
+    case "HARD_PREFER_TIME":
+      return identity + " does not fit inside one allowed time window.";
+    case "HARD_AVOID_TIME":
+      return identity + " overlaps a hard avoid time range.";
+    default:
+      return item.explanation || item.message || item.code || "A hard constraint failed.";
   }
+};
+
+export const indexProblem = (code, indexNo, error, validation, localReason) => {
+  // Preview flattens timetable fields; failed writes nest them under timetable.
+  const result = validation || error?.details?.validation ||
+    error?.details?.data?.validation || {};
+  const timetable = result.timetable || result;
+  const academic = result.eligibility || error?.details?.eligibility || {};
+  const reasons = timetableReasons(timetable);
+
+  for (const courseCode of list(academic.unselected_courses)) {
+    reasons.push(courseCode + " is stored in this plan but is not selected in its planning request. Remove its obsolete plan index.");
+  }
+  const courses = Array.isArray(academic.courses) ? academic.courses : [academic];
+  for (const course of courses) {
+    const name = course.course_code || code;
+    if (course.already_completed === true) {
+      reasons.push(name + " has already been completed and cannot remain in the planned course set.");
+    } else if (course.can_select === false || course.requires_review === true) {
+      reasons.push(name + ": " + (course.message || "Academic eligibility does not permit this selection."));
+    }
+    // Pending corequisites/missing indexes do not block an incremental save
+    // when can_select is true. Final selection still enforces them on the server.
+  }
+  if (academic.message && !Array.isArray(academic.courses) &&
+      academic.can_select !== true && !academic.already_completed) {
+    reasons.push(academic.message);
+  }
+  for (const item of list(result.invalid_term_indexes)) {
+    reasons.push([item.course_code, "index", item.index_no,
+      "does not match this planning request's academic year and semester."].join(" "));
+  }
+  for (const item of list(result.constraints?.violations)) {
+    if (item.code === "INCOMPLETE_TIMETABLE") reasons.push(...timetableReasons(item.data));
+    else reasons.push(constraintReason(item));
+  }
+
+  const warnings = unique(list(timetable.warnings).map((item) => {
+    if (typeof item === "string") return item;
+    return [item.course_code, item.index_no].filter(value => value != null).join(" / ") +
+      (item.message ? ": " + item.message : "");
+  }));
 
   return {
     title: "Unable to select index",
-    label: `${code} · Index ${indexNo}`,
-    summary:
-      localReason ||
-      error?.message ||
-      (list(result.conflicts).length
+    label: code + " · Index " + indexNo,
+    summary: localReason || error?.message ||
+      (list(timetable.conflicts).length
         ? "This index clashes with a class in your timetable."
         : "This index cannot be saved to your plan."),
     reasons: unique(reasons),
-    hint: "Choose another index, adjust blocked hours, or review the existing timetable.",
+    warnings,
+    hint: "Resolve the blocking reasons above, then try this index again.",
+  };
+};
+
+// Group presentation only. The complete backend evidence remains available
+// in the details view; neither constraints nor validation results are changed.
+export const generationProblem = (failure = {}) => {
+  const raw = list(failure.reasons);
+  const general = new Set(["NO_VALID_INDEX"]);
+  const groups = new Map();
+  for (const reason of raw) {
+    if (general.has(reason.code) && raw.some(other =>
+      other !== reason && other.course_code === reason.course_code && !general.has(other.code))) continue;
+    const explanation = reason.explanation || reason.message || reason.code || "Review the planning request.";
+    const key = JSON.stringify([reason.course_code || "", reason.code, explanation]);
+    if (!groups.has(key)) groups.set(key, {
+      course_code: reason.course_code, code: reason.code, explanation, indexes: [],
+    });
+    const indexes = groups.get(key).indexes;
+    if (reason.index_no != null && !indexes.includes(reason.index_no)) indexes.push(reason.index_no);
+  }
+  return {
+    summary: failure.code === "SEARCH_LIMIT_REACHED"
+      ? "The timetable search reached its limit. Feasibility is still unconfirmed."
+      : failure.infeasibility_proven === true
+        ? "No timetable satisfies the current courses and hard constraints."
+        : "A validated timetable could not be generated.",
+    reasons: [...groups.values()],
+    suggestions: unique(list(failure.suggestions).map(item => item.explanation || item.action)),
   };
 };

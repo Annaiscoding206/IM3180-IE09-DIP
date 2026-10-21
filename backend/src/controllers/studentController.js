@@ -4,8 +4,12 @@ const { evaluateEligibility, EligibilityNotFoundError } = require("../services/e
 const { getCompletionSummary } = require("../services/degreeAuditService");
 
 // GET /api/students
+// GET /api/students
+// Return only the authenticated student's profile.
 const getAllStudents = async (req, res) => {
   try {
+    const studentId = res.locals.authenticatedStudentId;
+
     const [students] = await pool.query(
       `
       SELECT
@@ -17,7 +21,9 @@ const getAllStudents = async (req, res) => {
         admission_route,
         created_at
       FROM student
-      `
+      WHERE student_id = ?
+      `,
+      [studentId]
     );
 
     res.status(200).json({

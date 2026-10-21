@@ -30,6 +30,19 @@
 .planner-plan-buttons button { cursor: pointer; min-width: 39px; height: 39px; border: 0; border-radius: 9px; background: #c8cbd1; color: white; font-weight: 800; font-size: 17px; }
 .planner-plan-buttons button.active { background: var(--red); }
 .planner-plan-buttons button:disabled { opacity: .6; cursor: wait; }
+.planner-manual-drafts {
+  margin-top: 12px;
+}
+
+.planner-manual-drafts summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.planner-manual-drafts .planner-plan-buttons {
+  margin-top: 8px;
+}
 .planner-muted { color: var(--muted); font-size: 11px; line-height: 1.45; }
 .planner-add-form { display: flex; gap: 7px; }
 .planner-add-form input { min-width: 0; width: 100%; flex: 1; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); padding: 10px; font-size: 12px; }

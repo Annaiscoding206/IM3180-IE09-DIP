@@ -18,6 +18,15 @@ module.exports = {
   createPlanningRequest: handle((req) => plans.createRequest(req.body || {}), 201),
   listPlanningRequests: handle((req) => plans.listRequests(req.query.student_id)),
   getPlanningRequest: handle((req) => plans.getRequest(req.params.requestId)),
+
+  updateTargetAu: handle((req, res) =>
+    plans.updateTargetAu(
+      req.params.requestId,
+      res.locals.authenticatedStudentId,
+      req.body || {}
+    )
+  ),
+
   createPlan: handle((req) => plans.createPlan(req.params.requestId, req.body || {}), 201),
   listPlans: handle((req) => plans.listPlanDetails(req.params.requestId)),
 };

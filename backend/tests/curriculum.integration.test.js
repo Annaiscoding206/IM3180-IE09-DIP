@@ -185,6 +185,50 @@ test("Programme Curriculum matching, progress and integration over live MySQL/HT
     await assert.rejects(curriculum.getStudentCurriculum("NO_SUCH_STUDENT", "NO_SUCH_STUDENT"), { status: 404 });
     await assert.rejects(curriculum.getStudentCurriculum(other, other), { status: 404 });
   });
+    await t.test("legacy Student APIs enforce authenticated student ownership", async () => {
+    // The student-list endpoint must return only the authenticated student.
+    const list = await http("/students");
+
+    assert.equal(list.status, 200);
+    assert.deepEqual(
+      list.data.map(row => row.student_id),
+      [student]
+    );
+
+    // The authenticated student can still access their own profile.
+    const ownProfile = await http(`/students/${student}`);
+
+    assert.equal(ownProfile.status, 200);
+    assert.equal(ownProfile.data.student_id, student);
+
+    // The authenticated student can still check their own eligibility.
+    const ownEligibility = await http(
+      `/students/${student}/eligibility/${code("F")}?request_id=${active}`
+    );
+
+    assert.equal(ownEligibility.status, 200);
+
+    // Another student's profile must not be accessible.
+    const foreignProfile = await http(`/students/${other}`);
+
+    assert.equal(foreignProfile.status, 404);
+    assert.equal(
+      foreignProfile.message,
+      "Student not found for this identity"
+    );
+
+    // Another student's eligibility must not be accessible,
+    // even when that student's planning request ID is supplied.
+    const foreignEligibility = await http(
+      `/students/${other}/eligibility/${code("F")}?request_id=${foreign}`
+    );
+
+    assert.equal(foreignEligibility.status, 404);
+    assert.equal(
+      foreignEligibility.message,
+      "Student not found for this identity"
+    );
+  });
   await t.test("database prevents credit double allocation and unverified minimum-year rules", async () => {
     await assert.rejects(pool.query(`INSERT INTO curriculum_course (curriculum_id, course_code, course_title, category_code)
       VALUES (?, ?, 'Duplicate bucket', 'BDE')`, [curriculumId, code("A")]), { code: "ER_DUP_ENTRY" });

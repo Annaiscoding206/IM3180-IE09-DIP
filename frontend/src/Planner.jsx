@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { api } from "./api";
 import PlannerPreferences from "./PlannerPreferences";
 import ReasonDialog from "./ReasonDialog";
-import { courseProblem, indexProblem } from "./reasonUtils";
+import { courseProblem, indexProblem, generationProblem } from "./reasonUtils";
 import "./planner.css";
 
 // Full teaching week
@@ -450,6 +450,7 @@ export default function Planner({
   onAddCourse,
   onRemoveCourse,
   onBackToExplorer,
+  onTargetAuUpdated,
 }) {
   const [plans, setPlans] = useState([]);
   const [activePlanId, setActivePlanId] = useState(null);
@@ -465,12 +466,25 @@ export default function Planner({
   const [summary, setSummary] = useState(null);
   const [comparisons, setComparisons] = useState([]);
   const [generationFailure, setGenerationFailure] = useState(null);
+  const generationIssue = generationFailure ? generationProblem(generationFailure) : null;
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [problem, setProblem] = useState(null);
+  const [targetAuDraft, setTargetAuDraft] = useState(
+    String(planningRequest?.target_au ?? 18)
+  );
+
+  useEffect(() => {
+    setTargetAuDraft(
+      String(planningRequest?.target_au ?? 18)
+    );
+  }, [
+    planningRequest?.request_id,
+    planningRequest?.target_au,
+  ]);
 
   const requestId = planningRequest?.request_id;
 
@@ -506,6 +520,59 @@ export default function Planner({
     (plan) =>
       Number(plan.plan_id) === Number(activePlanId)
   );
+  // Find the plan that has already been confirmed.
+  const confirmedPlan = plans.find(
+    (plan) => Boolean(plan.active_selection)
+  );
+  // Keep all backend plans, but group them for the interface.
+  const planEntries = plans.map((plan, position) => ({
+    plan,
+    position,
+  }));
+
+  const autoPlanPattern = /^AUTO Plan [ABC] #(\d+)$/;
+
+  // Identify all generated plans.
+  const allGeneratedPlanEntries = planEntries.filter(
+    ({ plan }) => autoPlanPattern.test(plan.plan_name)
+  );
+
+  // Identify the latest generation batch.
+  const latestGeneration = Math.max(
+    0,
+    ...allGeneratedPlanEntries.map(({ plan }) =>
+      Number(plan.plan_name.match(autoPlanPattern)[1])
+    )
+  );
+
+  // Only the latest generation appears in the main Plan A/B/C buttons.
+  const generatedPlanEntries = allGeneratedPlanEntries.filter(
+    ({ plan }) =>
+      Number(plan.plan_name.match(autoPlanPattern)[1]) ===
+      latestGeneration
+  );
+
+  // Preserve older generated plans separately.
+  const previousGeneratedEntries = allGeneratedPlanEntries.filter(
+    ({ plan }) =>
+      Number(plan.plan_name.match(autoPlanPattern)[1]) !==
+      latestGeneration
+  );
+
+  // Manual plans remain separate.
+  const manualPlanEntries = planEntries.filter(
+    ({ plan }) => !autoPlanPattern.test(plan.plan_name)
+  );
+
+  // Compare the generated alternatives in the main A/B/C table. Keep manual
+  // plans in state so they remain editable and selectable in their own area.
+  const comparisonRows = generatedPlanEntries.length
+    ? comparisons.filter((comparison) =>
+        generatedPlanEntries.some(
+          ({ plan }) => Number(plan.plan_id) === Number(comparison.plan_id)
+        )
+      )
+    : comparisons;
 
   const blockedHours = DAYS.flatMap(day => Array.from({ length: LAST_HOUR - FIRST_HOUR }, (_, i) => i + FIRST_HOUR)
     .filter(hour => blocks.some(block => overlapsHour(block, day, hour))).map(hour => blockKey(day, hour)));
@@ -550,7 +617,9 @@ export default function Planner({
       const result = await api.generatePlans(requestId, activePlanId);
       await reloadRequest();
       setActivePlanId(result.plans[0].plan_id);
-      setNotice(`Generated ${result.plans.length} timetable option(s). Review and save your final choice.`);
+      setNotice(
+        `Generated ${result.plans.length} timetable option(s). Review the alternatives, then confirm your preferred plan.`
+      );
     } catch (e) { setError(e.message); setGenerationFailure(e.details); }
     finally { setBusy(false); }
   };
@@ -595,7 +664,26 @@ export default function Planner({
           setComparisons(details);
           setPlans(next);
           const active = await api.activePlan(requestId);
-          if (!cancelled) setActivePlanId(active.plan?.plan_id ?? next[0]?.plan_id);
+
+          // Prefer the latest generated Plan A when no plan is finalized.
+          // Preserve the student's finalized plan if one exists.
+          const defaultGeneratedPlan = next
+            .filter(
+              (plan) => /^AUTO Plan A #\d+$/.test(plan.plan_name)
+            )
+            .sort(
+              (a, b) =>
+                Number(b.plan_name.match(/#(\d+)$/)[1]) -
+                Number(a.plan_name.match(/#(\d+)$/)[1])
+            )[0];
+
+          if (!cancelled) {
+            setActivePlanId(
+              active.plan?.plan_id ??
+              defaultGeneratedPlan?.plan_id ??
+              next[0]?.plan_id
+            );
+          }
         }
       } catch (loadError) {
         if (!cancelled) {
@@ -672,11 +760,24 @@ export default function Planner({
     await reloadRequest();
   };
 
-  // Generated alternatives and existing manual/selected plans remain accessible.
+  // Switch only when the target is different. Clearing an already-active plan
+  // would leave the calendar empty because the loading effect depends on its ID.
   const switchPlan = (position) => {
     if (!requestId || busy || loading || !plans[position]) return;
-    setError(""); setNotice(""); setExpandedCourse(null); setFeatureMode(null);
-    setSummary(null); setSlots([]); setIndexes([]); setActivePlanId(plans[position].plan_id);
+
+    const nextPlanId = Number(plans[position].plan_id);
+    if (nextPlanId === Number(activePlanId)) return;
+
+    setError("");
+    setNotice("");
+    setExpandedCourse(null);
+    setFeatureMode(null);
+    setProblem(null);
+    setSummary(null);
+    setSlots([]);
+    setIndexes([]);
+    setTimetableMeta(null);
+    setActivePlanId(nextPlanId);
   };
 
   const expandIndexes = async (code) => {
@@ -1021,7 +1122,40 @@ export default function Planner({
       setBusy(false);
     }
   };
+  const saveTargetAu = async () => {
+    if (!requestId || busy) return;
 
+    const newTarget = Number(targetAuDraft);
+
+    if (
+      !Number.isInteger(newTarget) ||
+      newTarget < 3 ||
+      newTarget > 30
+    ) {
+      setError("Target AU must be between 3 and 30.");
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+    setNotice("");
+
+    try {
+      const updatedRequest = await api.updateTargetAu(
+        requestId,
+        newTarget
+      );
+
+      // Synchronize the planning request in main.jsx.
+      onTargetAuUpdated?.(updatedRequest);
+
+      setNotice(`Target AU updated to ${newTarget} AU.`);
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <div className="planner-page">
       <section className="planner-heading">
@@ -1152,39 +1286,66 @@ export default function Planner({
           <div className="planner-control-section">
             <h2>Plan</h2>
 
-            <div className="planner-plan-buttons">
-              {plans.map((plan, position) => (
-                <button
-                  key={position}
-                  type="button"
-                  className={
-                    plans[position]?.plan_id ===
-                    activePlanId
-                      ? "active"
-                      : ""
-                  }
-                  disabled={
-                    !requestId || busy || loading
-                  }
-                  title={
-                    plans[position]?.plan_name ||
-                    `Create Plan ${
-                      position + 1
-                    }`
-                  }
-                  onClick={() =>
-                    switchPlan(position)
-                  }
-                >
-                  {plan.plan_name.replace(/^AUTO (Plan [ABC]) #\d+$/, "$1")}
-                </button>
-              ))}
-            </div>
+            <>
+              <small className="planner-muted">
+                {generatedPlanEntries.length > 0
+                  ? "Generated timetables"
+                  : "Working plan"}
+              </small>
+
+             <div className="planner-plan-buttons">
+              {(generatedPlanEntries.length > 0
+                ? generatedPlanEntries
+                : manualPlanEntries
+              ).map(({ plan, position }) => {
+                const isViewed =
+                  Number(plan.plan_id) === Number(activePlanId);
+
+                const isConfirmed = Boolean(plan.active_selection);
+
+                return (
+                  <button
+                    key={plan.plan_id}
+                    type="button"
+                    className={isViewed ? "active" : ""}
+                    style={
+                      isConfirmed
+                        ? {
+                            backgroundColor: "#15803d",
+                            color: "#ffffff",
+                            boxShadow: isViewed
+                              ? "0 0 0 3px rgba(21, 128, 61, 0.24)"
+                              : "none",
+                          }
+                        : undefined
+                    }
+                    aria-pressed={isViewed}
+                    disabled={!requestId || busy || loading}
+                    title={`${plan.plan_name}${
+                      isConfirmed ? " — confirmed final choice" : ""
+                    }`}
+                    onClick={() => switchPlan(position)}
+                 >
+                    {plan.plan_name.replace(
+                      /^AUTO (Plan [ABC]) #\d+$/,
+                      "$1"
+                    )}
+                    {isConfirmed ? " ✓" : ""}
+                  </button>
+                  );
+              })}
+          </div>
+          </>
 
             <small className="planner-muted">
               {activePlan?.active_selection
-                ? "Confirmed plan"
-                : "Each plan has its own indexes"}
+                ? "Final choice: this plan is confirmed"
+                : confirmedPlan
+                ? `Final choice: ${confirmedPlan.plan_name.replace(
+                    /^AUTO (Plan [ABC]) #\d+$/,
+                    "$1"
+                )}`
+                : "No final choice yet · Each plan has its own indexes"}
             </small>
           </div>
 
@@ -1391,7 +1552,11 @@ export default function Planner({
               disabled={busy || loading || !requestId || !selectedCodes.length}
               onClick={generate}
             >
-              Generate
+              {busy
+                ? "Working…"
+                : generatedPlanEntries.length > 0
+                ? "Regenerate Plans"
+                : "Generate Plans"}
             </button>
 
             <button
@@ -1401,36 +1566,53 @@ export default function Planner({
                 busy ||
                 loading ||
                 !selectedCodes.length ||
-                !activePlanId
+                !activePlanId ||
+                Boolean(activePlan?.active_selection)
               }
               onClick={savePlan}
             >
               {busy
-                ? "Working…"
-                : "Save"}
+              ? "Working…"
+              : activePlan?.active_selection
+              ? "Confirmed"
+              : confirmedPlan
+              ? "Switch Final Plan"
+              : "Confirm Plan"}
             </button>
           </div>
 
           <p className="planner-control-help">
-            Blocked periods are saved for this request. Locks preserve indexes when generating from the displayed plan. Save validates and selects your final timetable.
+            Blocks and index changes are saved immediately. Locked indexes are preserved when generating from the displayed plan. Confirm Plan validates and selects your final timetable; this does not register you for NTU courses.
           </p>
         </aside>
       </div>
 
-      {comparisons.length > 0 && <div className="planner-comparison"><table>
+      {comparisonRows.length > 0 && <div className="planner-comparison"><table>
         <caption>Plan comparison — current saved preferences</caption>
         <thead><tr><th>Plan</th><th>Rank</th><th>Saved score</th><th>Campus days</th><th>Gap minutes</th><th>Validation</th></tr></thead>
-        <tbody>{comparisons.map(p => <tr key={p.plan_id}><td>{p.plan_name}{p.active_selection ? " (final choice)" : ""}</td><td>{p.rank_no ?? "—"}</td><td>{p.match_score ?? "—"}</td><td>{p.metrics?.campus_days ?? "—"}</td><td>{p.metrics?.total_gap_minutes ?? "—"}</td><td>{p.validation.can_finalize ? "Ready" : "Needs review"}</td></tr>)}</tbody>
+        <tbody>{comparisonRows.map(p => <tr key={p.plan_id}><td>{p.plan_name.replace(/^AUTO (Plan [ABC]) #\d+$/, "$1")}{p.active_selection ? " (final choice)" : ""}</td><td>{p.rank_no ?? "—"}</td><td>{p.match_score ?? "—"}</td><td>{p.metrics?.campus_days ?? "—"}</td><td>{p.metrics?.total_gap_minutes ?? "—"}</td><td>{p.validation.can_finalize ? "Ready" : "Needs review"}</td></tr>)}</tbody>
       </table></div>}
       {requestId && <PlannerPreferences key={requestId} requestId={requestId} blocks={blocks} busy={busy}
         onBusy={setBusy} onError={setError} onChanged={reloadRequest} />}
       {summary?.metrics && <p className="planner-control-help">{summary.label}: rank {summary.rank_no ?? "unranked"} · saved score {summary.match_score ?? "not ranked"} · {summary.metrics.campus_days} campus days · {summary.metrics.total_gap_minutes} gap minutes · {summary.validation.can_finalize ? "Ready to finalize" : "Needs review"}. Metrics reflect saved preferences.</p>}
-      {summary?.sessions?.length > 0 && <details className="planner-preferences"><summary>All sessions for {summary.label}</summary>
-        {summary.sessions.map(s => <p key={`${s.course_code}-${s.index_no}-${s.slot_id}`}>{s.course_code} / {s.index_no}: {formatSession(s)} · {s.class_type} · weeks {s.teaching_weeks || "unspecified"}</p>)}
-      </details>}
-      {generationFailure && <div role="alert"><strong>{generationFailure.code}</strong>
-        {(generationFailure.reasons || []).map((r, i) => <p key={i}>{r.course_code} {r.code}: {r.explanation}</p>)}
-        {(generationFailure.suggestions || []).map((r, i) => <p key={i}>{r.explanation || r.action}</p>)}
+      {generationIssue && <div role="alert" className="planner-preferences">
+        <strong>{generationIssue.summary}</strong>
+        <ul>{generationIssue.reasons.map((reason, index) => <li key={index}>
+          {reason.course_code && <strong>{reason.course_code}: </strong>}
+          {reason.explanation}
+          {reason.indexes.length > 0 && (" Affected indexes: " + reason.indexes.join(", ") + ".")}
+        </li>)}</ul>
+        {generationIssue.suggestions.length > 0 && <ul>
+          {generationIssue.suggestions.map((suggestion, index) => <li key={index}>{suggestion}</li>)}
+        </ul>}
+        <details>
+          <summary>View detailed reasons</summary>
+          <p>{generationFailure.code}</p>
+          {(generationFailure.reasons || []).map((reason, index) => <p key={index}>
+            {[reason.course_code, reason.index_no != null ? "index " + reason.index_no : "",
+              reason.day, reason.code].filter(Boolean).join(" · ")}: {reason.explanation || reason.message}
+          </p>)}
+        </details>
       </div>}
       <section
         className="planner-selected-panel"
@@ -1488,6 +1670,61 @@ export default function Planner({
           )}
         </div>
 
+        <div
+          className="planner-target-au-control"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: "12px",
+            marginTop: "16px",
+            marginBottom: "20px",
+          }}
+        >
+          <label htmlFor="target-au-range">
+            Target AU: <strong>{targetAuDraft}</strong>
+          </label>
+
+          <input
+            id="target-au-range"
+            type="range"
+            min="3"
+            max="30"
+            step="1"
+            value={Number(targetAuDraft)}
+            onChange={(event) =>
+              setTargetAuDraft(event.target.value)
+            }
+            disabled={!requestId || busy}
+            style={{
+              width: "220px",
+              maxWidth: "100%",
+              accentColor: "#dc1247",
+              cursor: "pointer",
+            }}
+          />
+
+          <button
+            type="button"
+            className="planner-explorer-link"
+            onClick={saveTargetAu}
+            disabled={
+              !requestId ||
+              busy ||
+              Number(targetAuDraft) ===
+                Number(planningRequest?.target_au)
+            }
+          >
+            {busy ? "Saving..." : "Save Target"}
+          </button>
+
+          {Number(targetAuDraft) !==
+            Number(planningRequest?.target_au) && (
+            <small className="planner-muted">
+              Not saved yet
+            </small>
+          )}
+        </div>
         {selected.length ? (
           <div className="planner-selected-grid">
             {selected.map((course) => {

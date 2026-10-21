@@ -98,6 +98,12 @@ export const api = {
   removeBlock: (id, blockId) => json("DELETE", `/planning-requests/${id}/blocked-periods/${blockId}`),
   clearBlocks: (id) => json("DELETE", `/planning-requests/${id}/blocked-periods`),
   generatePlans: (id, sourcePlanId) => json("POST", `/planning-requests/${id}/generate-plans`, sourcePlanId ? { source_plan_id: sourcePlanId } : {}).then(b => b.data),
+  updateTargetAu: (requestId, targetAu) =>
+  json(
+    "PATCH",
+    `/planning-requests/${requestId}/target-au`,
+    { target_au: targetAu }
+  ).then(body => body.data),
   activePlan: (id) => request(`/planning-requests/${id}/active-plan`).then(b => b.data),
   planSummary: (id) => request(`/plans/${id}/summary`).then(b => b.data),
   lockIndex: (id, code, locked) => json("PUT", `/plans/${id}/indexes/${encodeURIComponent(code)}/lock`, { locked }).then(b => b.data),
