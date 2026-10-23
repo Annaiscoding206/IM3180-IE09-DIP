@@ -95,16 +95,99 @@ async function listRequests(studentId) {
 }
 
 async function createPlan(requestId, body = {}) {
+  const id = integer(requestId, "requestId");
   const name = text(body.plan_name, "plan_name", 50);
-  if (name.toUpperCase().startsWith("AUTO PLAN ")) throw new PlanningError(400, "AUTO Plan names are reserved for generated alternatives");
-  const request = await getRequest(requestId);
-  try {
-    const [result] = await pool.query("INSERT INTO plan (request_id, plan_name) VALUES (?, ?)", [request.request_id, name]);
-    return getPlan(result.insertId);
-  } catch (error) {
-    if (error.code === "ER_DUP_ENTRY") throw new PlanningError(409, "Plan name already exists for this planning request");
-    throw error;
+
+  if (name.toUpperCase().startsWith("AUTO PLAN ")) {
+    throw new PlanningError(
+      400,
+      "AUTO Plan names are reserved for generated alternatives"
+    );
   }
+
+  const sourceId = body.source_plan_id == null
+    ? null
+    : integer(body.source_plan_id, "source_plan_id");
+
+  return transaction(async (db) => {
+    const [requests] = await db.query(
+      "SELECT request_id FROM planning_request WHERE request_id = ? FOR UPDATE",
+      [id]
+    );
+
+    if (!requests.length) {
+      throw new PlanningError(404, "Planning request not found");
+    }
+
+    if (sourceId !== null) {
+      const [sources] = await db.query(
+        `SELECT plan_id FROM plan
+         WHERE plan_id = ? AND request_id = ?
+         FOR UPDATE`,
+        [sourceId, id]
+      );
+
+      if (!sources.length) {
+        throw new PlanningError(404, "Source plan not found in this request");
+      }
+    }
+
+    let result;
+    try {
+      [result] = await db.query(
+        "INSERT INTO plan (request_id, plan_name) VALUES (?, ?)",
+        [id, name]
+      );
+    } catch (error) {
+      if (error.code === "ER_DUP_ENTRY") {
+        throw new PlanningError(
+          409,
+          "Plan name already exists for this planning request"
+        );
+      }
+      throw error;
+    }
+
+    const newPlanId = result.insertId;
+
+    if (sourceId !== null) {
+      await db.query(
+        `INSERT INTO plan_selected_course (plan_id, course_code)
+         SELECT ?, course_code
+         FROM plan_selected_course
+         WHERE plan_id = ?`,
+        [newPlanId, sourceId]
+      );
+
+      await db.query(
+        `INSERT INTO plan_blocked_period
+         (plan_id, day_of_week, start_time, end_time)
+         SELECT ?, day_of_week, start_time, end_time
+         FROM plan_blocked_period
+         WHERE plan_id = ?`,
+        [newPlanId, sourceId]
+      );
+    } else {
+      await db.query(
+        `INSERT INTO plan_selected_course (plan_id, course_code)
+         SELECT ?, course_code
+         FROM planning_request_course
+         WHERE request_id = ?`,
+        [newPlanId, id]
+      );
+
+      await db.query(
+        `INSERT INTO plan_blocked_period
+         (plan_id, day_of_week, start_time, end_time)
+         SELECT ?, day_of_week, start_time, end_time
+         FROM planning_blocked_period
+         WHERE request_id = ?`,
+        [newPlanId, id]
+      );
+    }
+
+    return getPlan(newPlanId, db);
+  });
 }
 
 async function listPlans(requestId) {
@@ -170,9 +253,19 @@ async function validateCandidate(plan, courseCode, indexNo, db, lock) {
   const code = text(courseCode, "course_code", 10).toUpperCase();
   const index = integer(indexNo, "index_no");
   const [selected] = await db.query(
-    `SELECT course_code FROM planning_request_course WHERE request_id = ? AND course_code = ?${lock ? " FOR UPDATE" : ""}`,
-    [plan.request_id, code]
+    `SELECT course_code
+     FROM plan_selected_course
+     WHERE plan_id = ?
+     ORDER BY course_code${lock ? " FOR UPDATE" : ""}`,
+    [plan.plan_id]
   );
+
+  if (!selected.some((row) => row.course_code === code)) {
+    throw new PlanningError(
+      422,
+      "Course must be selected in this plan"
+    );
+  }
   if (!selected.length) throw new PlanningError(422, "Course must be selected in the parent planning request");
   const [courses] = await db.query(
     "SELECT course_code, index_no, academic_year, semester FROM course_info WHERE course_code = ? AND index_no = ?", [code, index]
@@ -186,7 +279,8 @@ async function validateCandidate(plan, courseCode, indexNo, db, lock) {
     plan.student_id,
     course.course_code,
     db,
-    plan.request_id
+    plan.request_id,
+    selected.map((row) => row.course_code)
   );
   if (!eligibility.can_select) {
   throw new PlanningError(
@@ -327,24 +421,34 @@ async function getPlanEligibility(planId, db = pool) {
   return evaluatePlanAcademics(plan, await readIndexes(plan.plan_id, db), db);
 }
 
-async function evaluatePlanAcademics(plan, indexes, db) {
-
+async function evaluatePlanAcademics(
+  plan,
+  indexes,
+  db,
+  selectedCourseCodes = null
+) {
   const planCourseCodes = [
     ...new Set(
       indexes.map((row) => row.course_code.trim().toUpperCase())
     ),
   ];
 
-  const [requestedCourses] = await db.query(
-    `SELECT course_code
-     FROM planning_request_course
-     WHERE request_id = ?
-     ORDER BY course_code`,
-    [plan.request_id]
-  );
+  const requestedCourses = selectedCourseCodes !== null
+    ? selectedCourseCodes.map((course_code) => ({ course_code }))
+    : (
+        await db.query(
+          `SELECT course_code
+           FROM plan_selected_course
+           WHERE plan_id = ?
+           ORDER BY course_code`,
+          [plan.plan_id]
+        )
+      )[0];
 
   const requestedCodes = new Set(
-    requestedCourses.map((row) => row.course_code.trim().toUpperCase())
+    requestedCourses.map((row) =>
+      row.course_code.trim().toUpperCase()
+    )
   );
   const includedCodes = new Set(planCourseCodes);
 
@@ -460,6 +564,17 @@ async function addCourseToRequest(requestId, courseCode) {
        VALUES (?, ?)`,
       [id, code]
     );
+
+    // Keep existing frontend requests compatible.
+    await db.query(
+      `INSERT IGNORE INTO plan_selected_course (plan_id, course_code)
+       SELECT plan_id, ?
+       FROM plan
+       WHERE request_id = ?
+         AND status <> 'ARCHIVED'`,
+      [code, id]
+    );
+
     await invalidateRequestPlans(db, id);
 
     return {
@@ -523,6 +638,18 @@ async function removeCourseFromRequest(requestId, courseCode) {
     if (result.affectedRows === 0) {
       throw new PlanningError(404, "Selected course not found");
     }
+
+    // Mirror legacy removals for non-archived plans.
+    await db.query(
+      `DELETE psc
+       FROM plan_selected_course psc
+       JOIN plan p ON p.plan_id = psc.plan_id
+       WHERE p.request_id = ?
+         AND psc.course_code = ?
+         AND p.status <> 'ARCHIVED'`,
+      [id, code]
+    );
+
     await invalidateRequestPlans(db, id);
 
     return { request_id: id, course_code: code };
@@ -543,10 +670,19 @@ async function getPlanValidation(planId, db = null) {
 
 // Shared by final selection and generation BEFORE inserting generated plan rows.
 // Caller holds the request lock; generated and manual plans obey the same rules.
-async function validatePlanContents(plan, indexes, db) {
-  const eligibility = await evaluatePlanAcademics(plan, indexes, db);
+async function validatePlanContents(plan, indexes, db, options = {}) {
+  const eligibility = await evaluatePlanAcademics(
+    plan,
+    indexes,
+    db,
+    options.selectedCourseCodes ?? null
+  );
+
   const schedules = await readSchedules(indexes, db);
-  const timetable = { plan_id: plan.plan_id ?? null, ...checkClashes(schedules) };
+  const timetable = {
+    plan_id: plan.plan_id ?? null,
+    ...checkClashes(schedules)
+  };
   const invalidIndexes = [];
   for (const index of indexes) {
     const [rows] = await db.query(
@@ -557,7 +693,14 @@ async function validatePlanContents(plan, indexes, db) {
       invalidIndexes.push({ course_code: index.course_code, index_no: index.index_no });
     }
   }
-  const constraints = checkHardConstraints(schedules, await readPreferenceSnapshot(db, plan.request_id));
+  const snapshot = options.snapshot ??
+    await readPreferenceSnapshot(
+      db,
+      plan.request_id,
+      plan.plan_id ?? null
+    );
+
+  const constraints = checkHardConstraints(schedules, snapshot);
   return {
     plan_id: plan.plan_id ?? null,
     request_id: plan.request_id,

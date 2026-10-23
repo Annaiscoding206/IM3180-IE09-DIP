@@ -72,10 +72,59 @@ test("generation against local MySQL and HTTP", { skip: process.env.RUN_MYSQL_TE
     if (prefs) await preferences.replacePreferences(row.insertId, student, prefs);
     return row.insertId;
   }
-  async function manual(id, letter, number, locked = false, status = "GENERATED") {
-    const [row] = await pool.query("INSERT INTO plan (request_id, plan_name, rank_no, match_score, status) VALUES (?, ?, 1, 95, ?)", [id, `Manual ${letter} ${number} ${status}`, status]);
-    await pool.query("INSERT INTO plan_course (plan_id, course_code, index_no, locked) VALUES (?, ?, ?, ?)", [row.insertId, codes[letter], number, locked]);
-    return row.insertId;
+  async function manual(
+    id,
+    letter,
+    number,
+    locked = false,
+    status = "GENERATED"
+  ) {
+    const [row] = await pool.query(
+      `INSERT INTO plan
+       (request_id, plan_name, rank_no, match_score, status)
+       VALUES (?, ?, 1, 95, ?)`,
+      [
+        id,
+        `Manual ${letter} ${number} ${status}`,
+        status
+      ]
+    );
+
+    const planId = row.insertId;
+
+    // Copy the request's selected courses into the test plan.
+    await pool.query(
+      `INSERT INTO plan_selected_course
+       (plan_id, course_code)
+       SELECT ?, course_code
+       FROM planning_request_course
+       WHERE request_id = ?`,
+      [planId, id]
+    );
+
+    // Copy existing request-level blocked periods.
+    await pool.query(
+      `INSERT INTO plan_blocked_period
+       (plan_id, day_of_week, start_time, end_time)
+       SELECT ?, day_of_week, start_time, end_time
+       FROM planning_blocked_period
+       WHERE request_id = ?`,
+      [planId, id]
+    );
+
+    await pool.query(
+      `INSERT INTO plan_course
+       (plan_id, course_code, index_no, locked)
+       VALUES (?, ?, ?, ?)`,
+      [
+        planId,
+        codes[letter],
+        number,
+        locked
+      ]
+    );
+
+    return planId;
   }
   const app = express();
   app.use(express.json());

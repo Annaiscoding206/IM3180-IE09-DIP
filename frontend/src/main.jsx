@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { api } from "./api";
-import Planner, { forgetStoredCourseLocks } from "./Planner";
+import Planner from "./Planner";
 import ReasonDialog from "./ReasonDialog";
 import { courseProblem } from "./reasonUtils";
 import "./styles.css";
@@ -117,6 +117,25 @@ const formatSlot = (slot) =>
   ).slice(0, 5)} · ${slot.class_type}${
     slot.venue ? ` · ${slot.venue}` : ""
   }`;
+const choosePlannerPlan = (plans, preferredId = null) => {
+  const available = plans.filter(
+    (plan) => plan.status !== "ARCHIVED"
+  );
+
+  const preferred = available.find(
+    (plan) => Number(plan.plan_id) === Number(preferredId)
+  );
+
+  const latestGeneratedA = available
+    .filter((plan) => /^AUTO Plan A #\d+$/.test(plan.plan_name))
+    .sort(
+      (a, b) =>
+        Number(b.plan_name.match(/#(\d+)$/)[1]) -
+        Number(a.plan_name.match(/#(\d+)$/)[1])
+    )[0];
+
+  return preferred || latestGeneratedA || available[0] || null;
+};
 
 function App() {
   const [theme, setTheme] = useState(() =>
@@ -129,6 +148,7 @@ function App() {
   const [student, setStudent] = useState(null);
   const [planningRequest, setPlanningRequest] = useState(null);
   const [selectedCodes, setSelectedCodes] = useState([]);
+  const [workingPlanId, setWorkingPlanId] = useState(null);
   const [page, setPage] = useState(() => {
   return sessionStorage.getItem("smart-stars-page") || "explorer";});
   useEffect(() => {
@@ -175,7 +195,24 @@ function App() {
         const requestDetail = requestSummary
           ? await api.planningRequest(requestSummary.request_id)
           : null;
+        const availablePlans = requestDetail
+          ? await api.plans(requestDetail.request_id)
+          : [];
 
+        const activeSelection =
+          requestDetail && availablePlans.length
+            ? await api.activePlan(requestDetail.request_id)
+            : null;
+
+        const initialPlan = choosePlannerPlan(
+          availablePlans,
+          activeSelection?.plan?.plan_id
+        );
+
+        const initialCodes = initialPlan
+          ? (await api.planSelectedCourses(initialPlan.plan_id))
+              .map((row) => row.course_code)
+          : [];
         const eligibility = await Promise.all(
           courseData.map(async (course) => {
             try {
@@ -197,7 +234,8 @@ function App() {
         if (!cancelled) {
           setStudent(studentData);
           setPlanningRequest(requestDetail);
-          setSelectedCodes(requestDetail?.selected_courses || []);
+          setWorkingPlanId(initialPlan?.plan_id ?? null);
+          setSelectedCodes(initialCodes);
 
           setCourses(
             courseData.map((course) => ({
@@ -309,20 +347,45 @@ function App() {
         setPlanningRequest(created);
       }
 
+      let planId = workingPlanId;
+
+      if (!planId) {
+        const availablePlans = await api.plans(requestId);
+
+        let chosenPlan = choosePlannerPlan(availablePlans);
+
+        if (!chosenPlan) {
+          let number = 1;
+
+          while (
+            availablePlans.some(
+              (plan) => plan.plan_name === `Plan ${number}`
+            )
+          ) {
+            number++;
+          }
+
+          chosenPlan = await api.createPlan(
+            requestId,
+            `Plan ${number}`
+          );
+        }
+
+        planId = chosenPlan.plan_id;
+        setWorkingPlanId(planId);
+      }
+
       if (removing) {
-        await api.removeCourseEverywhere(requestId, code);
+        await api.removePlanSelectedCourse(planId, code);
       } else {
-        await api.addSelectedCourse(requestId, code);
+        await api.addPlanSelectedCourse(planId, code);
       }
 
-      const stored = await api.selectedCourses(requestId);
-      const nextCodes = stored.map((item) => item.course_code);
+      const stored = await api.planSelectedCourses(planId);
 
-      setSelectedCodes(nextCodes);
-
-      if (removing) {
-        forgetStoredCourseLocks(requestId, code);
-      }
+      setSelectedCodes(
+        stored.map((item) => item.course_code)
+      );
 
       return true;
     } catch (changeError) {
@@ -338,8 +401,7 @@ function App() {
 
     if (
       !removing &&
-      (completedCodes.has(course.course_code) ||
-        course.eligibility?.can_select === false)
+      completedCodes.has(course.course_code)
     ) {
       setReasonProblem(
         courseProblem(
@@ -523,8 +585,11 @@ function App() {
               planningRequest={planningRequest}
               selectedCodes={selectedCodes}
               courses={courses}
-              onAddCourse={(code) => changeCourse(code)}
-              onRemoveCourse={(code) => changeCourse(code, true)}
+              preferredPlanId={workingPlanId}
+              onPlanChanged={(planId, codes) => {
+                setWorkingPlanId(planId);
+                setSelectedCodes(codes);
+              }}
               onBackToExplorer={() => setPage("explorer")}
               onTargetAuUpdated={(updatedRequest) =>
                 setPlanningRequest(updatedRequest)
@@ -709,10 +774,7 @@ function App() {
                           completedCodes
                         );
 
-                        const blocked =
-                          status === "completed" ||
-                          (status !== "planned" &&
-                            course.eligibility?.can_select === false);
+                        const blocked = status === "completed";
 
                         return (
                           <article

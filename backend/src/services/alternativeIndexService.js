@@ -22,8 +22,20 @@ async function getAlternatives(planId, courseCode, studentId, query = {}) {
       [owners[0].request_id, studentId]);
     if (!requests.length) throw new plans.PlanningError(404, "Plan not found for this student");
     const plan = await plans.getPlan(id, db, true);
-    const [selected] = await db.query("SELECT course_code FROM planning_request_course WHERE request_id = ? AND course_code = ?", [plan.request_id, course]);
-    if (!selected.length) throw new plans.PlanningError(422, "Course must be selected in the parent planning request");
+    const [selected] = await db.query(
+      `SELECT course_code
+       FROM plan_selected_course
+       WHERE plan_id = ?
+         AND course_code = ?`,
+      [plan.plan_id, course]
+    );
+
+    if (!selected.length) {
+      throw new plans.PlanningError(
+        422,
+        "Course must be selected in this plan"
+      );
+    }
     const [indexes] = await db.query("SELECT course_code, index_no, locked FROM plan_course WHERE plan_id = ? ORDER BY course_code", [id]);
     const current = indexes.find(index => index.course_code.toUpperCase() === course);
     if (!explicit && !current) throw new plans.PlanningError(400, "No chosen index exists; supply candidate_index_no explicitly");

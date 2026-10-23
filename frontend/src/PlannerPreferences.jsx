@@ -5,7 +5,15 @@ const days = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 const empty = () => ({ day_preferences: [], time_preferences: [], objectives: [] });
 const choice = (value, values, label, onChange) => <select aria-label={label} value={value} onChange={e => onChange(e.target.value)}>{values.map(v => <option key={v}>{v}</option>)}</select>;
 
-export default function PlannerPreferences({ requestId, blocks, busy, onChanged, onBusy, onError }) {
+export default function PlannerPreferences({
+  requestId,
+  planId,
+  blocks,
+  busy,
+  onChanged,
+  onBusy,
+  onError,
+}) {
   const [draft, setDraft] = useState(empty);
   const [loaded, setLoaded] = useState(false);
   const [message, setMessage] = useState("");
@@ -63,12 +71,12 @@ export default function PlannerPreferences({ requestId, blocks, busy, onChanged,
     <button disabled={busy || !loaded} onClick={() => act(() => api.savePreferences(requestId, draft), "Preferences saved. Existing plan rankings and final selection were invalidated if preferences changed.")}>Save preferences</button>
     <fieldset disabled={busy}>
       <legend>Blocked periods (hard unavailability)</legend>
-      {blocks.map(b => <div key={b.block_id}>{b.day_of_week} {b.start_time}–{b.end_time} <button onClick={() => act(() => api.removeBlock(requestId, b.block_id), "Blocked period removed.")}>Remove block</button></div>)}
+      {blocks.map(b => <div key={b.block_id}>{b.day_of_week} {b.start_time}–{b.end_time} <button onClick={() => act(() => api.removePlanBlock(planId, b.block_id), "Blocked period removed.")}>Remove block</button></div>)}
       {choice(block.day_of_week, days, "Blocked day", v => setBlock({ ...block, day_of_week: v }))}
       <input aria-label="Blocked start" type="time" step="1" value={block.start_time} onChange={e => setBlock({ ...block, start_time: e.target.value })} />
       <input aria-label="Blocked end" type="time" step="1" value={block.end_time} onChange={e => setBlock({ ...block, end_time: e.target.value })} />
-      <button onClick={() => act(() => api.addBlock(requestId, block), "Blocked period saved.")}>Add blocked period</button>
-      <button disabled={!blocks.length} onClick={() => act(() => api.clearBlocks(requestId), "All blocked periods cleared.")}>Clear all blocks</button>
+      <button onClick={() => act(() => api.addPlanBlock(planId, block), "Blocked period saved.")}>Add blocked period</button>
+      <button disabled={!blocks.length} onClick={() => act(() => api.clearPlanBlocks(planId), "All blocked periods cleared.")}>Clear all blocks</button>
     </fieldset>
     {message && <p role="status">{message}</p>}
   </details>;

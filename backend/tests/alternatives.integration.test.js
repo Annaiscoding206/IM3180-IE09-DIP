@@ -92,6 +92,23 @@ test("alternative indexes and generation explanations against MySQL/HTTP", { ski
     const [r] = await pool.query("INSERT INTO planning_request (student_id, academic_year, semester) VALUES (?, '2026-2027', 1)", [studentId]);
     for (const letter of letters) await pool.query("INSERT INTO planning_request_course (request_id, course_code) VALUES (?, ?)", [r.insertId, code(letter)]);
     const [p] = await pool.query("INSERT INTO plan (request_id, plan_name, rank_no, match_score, status) VALUES (?, 'Test plan', 1, 95, 'SELECTED')", [r.insertId]);
+    // Populate the new plan-specific tables for this test plan.
+    await pool.query(
+      `INSERT INTO plan_selected_course (plan_id, course_code)
+       SELECT ?, course_code
+       FROM planning_request_course
+       WHERE request_id = ?`,
+      [p.insertId, r.insertId]
+    );
+
+    await pool.query(
+      `INSERT INTO plan_blocked_period
+       (plan_id, day_of_week, start_time, end_time)
+       SELECT ?, day_of_week, start_time, end_time
+       FROM planning_blocked_period
+       WHERE request_id = ?`,
+      [p.insertId, r.insertId]
+    );
     for (const [letter, index, locked = false] of chosen) await pool.query("INSERT INTO plan_course (plan_id, course_code, index_no, locked) VALUES (?, ?, ?, ?)", [p.insertId, code(letter), index, locked]);
     return { request: r.insertId, plan: p.insertId };
   }

@@ -64,6 +64,11 @@ function setup(change = () => {}) {
   const inserts = [];
   const db = {
     async query(sql, params) {
+      // Legacy request-level selection also mirrors to existing plans.
+      // This unit-test fixture has no plans, so nothing is copied.
+      if (/INSERT\s+IGNORE\s+INTO\s+plan_selected_course/i.test(sql)) {
+        return [{ affectedRows: 0 }];
+      }
       if (
         sql.trim() ===
         "SET TRANSACTION ISOLATION LEVEL READ COMMITTED"
@@ -169,9 +174,20 @@ function setup(change = () => {}) {
     "./hardConstraintService": require("../src/services/hardConstraintService"),
     "./planInvalidationService": require("../src/services/planInvalidationService"),
   });
-  const dependencies = { "../config/db": db, "../services/eligibilityService": service, "../services/planService": planService,
-    "../services/degreeAuditService": require("../src/services/degreeAuditService"),
-    "../services/curriculumService": require("../src/services/curriculumService") };
+  const dependencies = {
+    "../config/db": db,
+    "../services/eligibilityService": service,
+    "../services/planService": planService,
+
+    // The legacy eligibility tests do not invoke plan-scoped endpoints.
+    "../services/planScopedService": {},
+
+    "../services/degreeAuditService":
+      require("../src/services/degreeAuditService"),
+
+    "../services/curriculumService":
+      require("../src/services/curriculumService")
+  };
   const student = loadModule("backend/src/controllers/studentController.js", dependencies);
   const plan = loadModule("backend/src/controllers/planController.js", dependencies);
   async function invoke(handler, req) {

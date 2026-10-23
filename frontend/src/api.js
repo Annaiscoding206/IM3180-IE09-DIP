@@ -122,5 +122,36 @@ export const api = {
   // and messages shared between website and Telegram.
   getActiveChat: () =>
     request("/chat/active"),
+  // Independent plan course selections
+  planSelectedCourses: (planId) =>
+    request(`/plans/${planId}/selected-courses`)
+      .then((body) => body.data),
 
+  addPlanSelectedCourse: (planId, code) =>
+    json("POST", `/plans/${planId}/selected-courses`, {
+      course_code: code,
+    }).then((body) => body.data),
+
+  removePlanSelectedCourse: (planId, code) =>
+    json(
+      "DELETE",
+      `/plans/${planId}/selected-courses/${encodeURIComponent(code)}`
+    ).then((body) => body.data),
+
+  // Independent plan blocked periods
+  planBlocks: (planId) =>
+    request(`/plans/${planId}/blocked-periods`)
+      .then((body) => body.data.blocked_periods),
+
+  addPlanBlock: (planId, data) =>
+    json("POST", `/plans/${planId}/blocked-periods`, data)
+      .then((body) => body.data),
+
+  removePlanBlock: (planId, blockId) =>
+    json("DELETE", `/plans/${planId}/blocked-periods/${blockId}`)
+      .then((body) => body.data),
+
+  clearPlanBlocks: (planId) =>
+    json("DELETE", `/plans/${planId}/blocked-periods`)
+      .then((body) => body.data),
 };

@@ -22,6 +22,42 @@ const { requestOwner, planOwner } = require("../middleware/planningOwnership");
 router.use(planningIdentity);
 router.param("requestId", requestOwner);
 router.param("planId", planOwner);
+const planScopeController = require("../controllers/planController");
+
+router.get(
+  "/:planId/selected-courses",
+  planScopeController.getPlanSelectedCourses
+);
+
+router.post(
+  "/:planId/selected-courses",
+  planScopeController.addPlanSelectedCourse
+);
+
+router.delete(
+  "/:planId/selected-courses/:courseCode",
+  planScopeController.removePlanSelectedCourse
+);
+
+router.get(
+  "/:planId/blocked-periods",
+  planScopeController.getPlanBlockedPeriods
+);
+
+router.post(
+  "/:planId/blocked-periods",
+  planScopeController.addPlanBlockedPeriod
+);
+
+router.delete(
+  "/:planId/blocked-periods/:blockId",
+  planScopeController.removePlanBlockedPeriod
+);
+
+router.delete(
+  "/:planId/blocked-periods",
+  planScopeController.clearPlanBlockedPeriods
+);
 const { getIndexAlternatives } = require("../controllers/alternativeIndexController");
 router.get("/:planId/indexes/:courseCode/alternatives", getIndexAlternatives);
 

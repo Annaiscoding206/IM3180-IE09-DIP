@@ -30,8 +30,35 @@ async function generatePlans(requestId, studentId, body = {}) {
       code: "SOURCE_PLAN_REQUIRED", locked_plan_ids: [...new Set(allLocks.map(row => row.plan_id))],
     });
     const locks = new Map(allLocks.filter(row => row.plan_id === sourceId).map(row => [row.course_code, row.index_no]));
-    const [selected] = await db.query("SELECT course_code FROM planning_request_course WHERE request_id = ? ORDER BY course_code", [id]);
-    const snapshot = await readPreferenceSnapshot(db, id);
+    let selected;
+
+    if (sourceId !== null) {
+      // Generate using the selected courses of a specific plan.
+      [selected] = await db.query(
+        `SELECT course_code
+         FROM plan_selected_course
+         WHERE plan_id = ?
+         ORDER BY course_code`,
+        [sourceId]
+      );
+    } else {
+      // Legacy fallback when no source plan is specified.
+      [selected] = await db.query(
+        `SELECT course_code
+         FROM planning_request_course
+         WHERE request_id = ?
+         ORDER BY course_code`,
+        [id]
+      );
+    }
+
+    const selectedCodes = selected.map(row => row.course_code);
+
+    const snapshot = await readPreferenceSnapshot(
+      db,
+      id,
+      sourceId
+    );
     const reasons = [];
     const emptySearch = { visited_nodes: 0, candidates_found: 0, exhaustive: true, ...SEARCH_LIMITS };
     function noPlan(details, search = emptySearch) {
@@ -46,7 +73,12 @@ async function generatePlans(requestId, studentId, body = {}) {
     for (const [code, index] of locks) {
       if (!selected.some(row => row.course_code === code)) reasons.push({ code: "LOCKED_COURSE_NOT_SELECTED", course_code: code, index_no: index });
     }
-    const academics = await plans.evaluatePlanAcademics(request, selected, db);
+    const academics = await plans.evaluatePlanAcademics(
+      request,
+      selected,
+      db,
+      selectedCodes
+    );
     if (!academics.eligible) reasons.push({ code: "ACADEMIC_INELIGIBILITY", eligibility: academics });
     if (reasons.length) noPlan(reasons);
 
@@ -83,8 +115,24 @@ async function generatePlans(requestId, studentId, body = {}) {
     const alternatives = rankPlans(candidates, snapshot).slice(0, 3);
     // Reuse final academic/term/timetable/hard validation before ANY writes.
     for (const alternative of alternatives) {
-      alternative.validation = await plans.validatePlanContents(request, alternative.indexes, db);
-      if (!alternative.validation.can_finalize) noPlan([{ code: "FINAL_VALIDATION_FAILED", validation: alternative.validation }]);
+      alternative.validation = await plans.validatePlanContents(
+        request,
+        alternative.indexes,
+        db,
+        {
+          selectedCourseCodes: selectedCodes,
+          snapshot
+        }
+      );
+
+      if (!alternative.validation.can_finalize) {
+        noPlan([
+          {
+            code: "FINAL_VALIDATION_FAILED",
+            validation: alternative.validation
+          }
+        ]);
+      }
     }
     // Names provide provenance without a schema change. The manual create API
     // reserves this prefix. Never delete plans; preserve source, SELECTED and
@@ -97,10 +145,54 @@ async function generatePlans(requestId, studentId, body = {}) {
     for (const [position, alternative] of alternatives.entries()) {
       const label = `Plan ${"ABC"[position]}`;
       const name = `AUTO ${label} #${batch}`;
-      const [inserted] = await db.query("INSERT INTO plan (request_id, plan_name, rank_no, match_score, status) VALUES (?, ?, ?, ?, 'GENERATED')",
-        [id, name, position + 1, alternative.metrics.match_score]);
-      for (const index of alternative.indexes) await db.query("INSERT INTO plan_course (plan_id, course_code, index_no, locked) VALUES (?, ?, ?, ?)",
-        [inserted.insertId, index.course_code, index.index_no, index.locked]);
+      const [inserted] = await db.query(
+        `INSERT INTO plan
+         (request_id, plan_name, rank_no, match_score, status)
+         VALUES (?, ?, ?, ?, 'GENERATED')`,
+        [id, name, position + 1, alternative.metrics.match_score]
+      );
+
+      const newPlanId = inserted.insertId;
+
+      // 1. Save this plan's selected courses.
+      for (const courseCode of selectedCodes) {
+        await db.query(
+          `INSERT INTO plan_selected_course
+           (plan_id, course_code)
+           VALUES (?, ?)`,
+          [newPlanId, courseCode]
+        );
+      }
+
+      // 2. Save this plan's blocked periods.
+      for (const block of snapshot.blocked_periods) {
+        await db.query(
+          `INSERT INTO plan_blocked_period
+           (plan_id, day_of_week, start_time, end_time)
+           VALUES (?, ?, ?, ?)`,
+          [
+            newPlanId,
+            block.day_of_week,
+            block.start_time,
+            block.end_time
+          ]
+        );
+      }
+
+      // 3. Save the generated course indexes.
+      for (const index of alternative.indexes) {
+        await db.query(
+          `INSERT INTO plan_course
+           (plan_id, course_code, index_no, locked)
+           VALUES (?, ?, ?, ?)`,
+          [
+            newPlanId,
+            index.course_code,
+            index.index_no,
+            index.locked
+          ]
+        );
+      }
       const validation = alternative.validation;
       results.push({ plan_id: inserted.insertId, plan_name: name, label, rank_no: position + 1,
         match_score: alternative.metrics.match_score, status: "GENERATED", metrics: alternative.metrics,

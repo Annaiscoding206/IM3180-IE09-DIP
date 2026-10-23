@@ -14,11 +14,48 @@ async function summarizePlan(plan, db) {
   const detail = await plans.describePlan(plan, db);
   const indexes = await db.query("SELECT course_code, index_no, locked FROM plan_course WHERE plan_id = ? ORDER BY course_code", [plan.plan_id]).then(([rows]) => rows);
   const schedules = await plans.readSchedules(indexes, db);
+  const [selectedRows] = await db.query(
+    `SELECT course_code
+     FROM plan_selected_course
+     WHERE plan_id = ?
+     ORDER BY course_code`,
+    [plan.plan_id]
+  );
+
+  const snapshot = await readPreferenceSnapshot(
+    db,
+    plan.request_id,
+    plan.plan_id
+  );
+
+  const selectedCourses = selectedRows.map(
+    row => row.course_code
+  );
   const sessions = schedules.flatMap(index => index.slots.map(slot => ({ ...slot, course_code: index.course_code, index_no: index.index_no })))
     .sort((a, b) => ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"].indexOf(a.day_of_week) - ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"].indexOf(b.day_of_week) || a.start_time.localeCompare(b.start_time) || a.slot_id - b.slot_id);
-  return { ...detail, indexes, sessions, metrics: detail.validation.timetable.status === "incomplete" || !indexes.length
-    ? null : scorePlan(schedules, await readPreferenceSnapshot(db, plan.request_id)), metrics_scope: "current_saved_preferences",
-    label: plan.plan_name.match(/^AUTO (Plan [ABC]) #\d+$/)?.[1] ?? plan.plan_name };
+  return {
+    ...detail,
+
+    selected_courses: selectedCourses,
+
+    blocked_periods: snapshot.blocked_periods,
+
+    indexes,
+
+    sessions,
+
+    metrics:
+      detail.validation.timetable.status === "incomplete" ||
+      !indexes.length
+        ? null
+        : scorePlan(schedules, snapshot),
+
+    metrics_scope: "current_plan_preferences",
+
+    label:
+      plan.plan_name.match(/^AUTO (Plan [ABC]) #\d+$/)?.[1] ??
+      plan.plan_name
+  };
 }
 async function getPlanSummary(planId, studentId) {
   return plans.transaction(async db => {

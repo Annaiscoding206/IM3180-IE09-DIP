@@ -2,11 +2,26 @@ const { checkClashes } = require("./clashService");
 const { findBlockedPeriodConflicts } = require("./blockedPeriodService");
 const { normalizeTime } = require("./preferenceValidation");
 const { readPreferences, readBlocks } = require("./preferenceService");
+const { readPlanBlocks } = require("./planScopedService");
 
 // Read on the caller's transaction connection, under its parent request lock.
 // The preference service exposes these readers without opening another transaction.
-async function readPreferenceSnapshot(db, requestId) {
-  return { ...await readPreferences(db, requestId), ...await readBlocks(db, requestId) };
+async function readPreferenceSnapshot(db, requestId, planId = null) {
+  const preferences = await readPreferences(db, requestId);
+
+  const blocks = planId === null
+    ? await readBlocks(db, requestId)
+    : await readPlanBlocks(db, planId);
+
+  return { ...preferences, ...blocks };
+}async function readPreferenceSnapshot(db, requestId, planId = null) {
+  const preferences = await readPreferences(db, requestId);
+
+  const blocks = planId === null
+    ? await readBlocks(db, requestId)
+    : await readPlanBlocks(db, planId);
+
+  return { ...preferences, ...blocks };
 }
 
 function checkHardConstraints(indexes, preferences) {

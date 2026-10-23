@@ -1,5 +1,6 @@
 const pool = require("../config/db");
 const { EligibilityNotFoundError } = require("../services/eligibilityService");
+const planScope = require("../services/planScopedService");
 const plans = require("../services/planService");
 const getSelectedCourses = async (req, res) => {
   try {
@@ -215,5 +216,57 @@ module.exports = {
   ),
   selectPlan: handlePlan(
   (req) => plans.selectPlan(req.params.planId)
+  ),
+    getPlanSelectedCourses: handlePlan((req, res) =>
+    planScope.getSelectedCourses(
+      req.params.planId,
+      res.locals.authenticatedStudentId
+    )
+  ),
+
+  addPlanSelectedCourse: handlePlan((req, res) =>
+    planScope.addSelectedCourse(
+      req.params.planId,
+      res.locals.authenticatedStudentId,
+      req.body?.course_code
+    )
+  ),
+
+  removePlanSelectedCourse: handlePlan((req, res) =>
+    planScope.removeSelectedCourse(
+      req.params.planId,
+      res.locals.authenticatedStudentId,
+      req.params.courseCode
+    )
+  ),
+
+  getPlanBlockedPeriods: handlePlan((req, res) =>
+    planScope.getBlocks(
+      req.params.planId,
+      res.locals.authenticatedStudentId
+    )
+  ),
+
+  addPlanBlockedPeriod: handlePlan((req, res) =>
+    planScope.addBlock(
+      req.params.planId,
+      res.locals.authenticatedStudentId,
+      req.body
+    )
+  ),
+
+  removePlanBlockedPeriod: handlePlan((req, res) =>
+    planScope.removeBlock(
+      req.params.planId,
+      res.locals.authenticatedStudentId,
+      req.params.blockId
+    )
+  ),
+
+  clearPlanBlockedPeriods: handlePlan((req, res) =>
+    planScope.clearBlocks(
+      req.params.planId,
+      res.locals.authenticatedStudentId
+    )
   ),
 };
