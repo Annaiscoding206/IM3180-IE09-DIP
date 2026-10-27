@@ -9,6 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "html-to-image": "^1.11.13",
+    "jspdf": "^4.2.1",
     "react": "latest",
     "react-dom": "latest"
   },

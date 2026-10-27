@@ -43,6 +43,21 @@ test("Generate uses request ID and explicit source plan; summaries and selection
   assert.equal(calls[4][0], "/api/plans/99/indexes/IE3014/lock"); assert.deepEqual(JSON.parse(calls[4][1].body), { locked: true });
 });
 
+test("Regenerate targets one plan directly", async t => {
+  const calls = [];
+  const regenerated = { plan_id: 99, indexes: [{ course_code: "IE3014", index_no: 2, locked: false }] };
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    calls.push([url, options]);
+    return Response.json({ success: true, data: regenerated });
+  });
+
+  assert.deepEqual(await api.regeneratePlan(99), regenerated);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], "/api/plans/99/regenerate");
+  assert.equal(calls[0][1].method, "POST");
+  assert.equal(calls[0][1].body, undefined);
+});
+
 test("structured no-plan/search-limit failures reach the UI intact", async t => {
   for (const [status, code] of [[422, "NO_FEASIBLE_PLAN"], [409, "SEARCH_LIMIT_REACHED"]]) {
     const failure = { success: false, message: "No timetable found", code, reasons: [{ code: "HARD_DAY_CONSTRAINT" }], suggestions: [{ action: "REVIEW_HARD_CONSTRAINT" }] };

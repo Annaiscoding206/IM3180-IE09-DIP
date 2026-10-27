@@ -224,8 +224,44 @@ export const indexProblem = (code, indexNo, error, validation, localReason) => {
 export const generationProblem = (failure = {}) => {
   const raw = list(failure.reasons);
   const general = new Set(["NO_VALID_INDEX"]);
+  const blocked = new Map();
+
+  for (const reason of raw.filter(item => item.code === "BLOCKED_PERIOD_CONFLICT")) {
+    const key = JSON.stringify([
+      reason.course_code || "",
+      reason.block_id ?? "",
+      reason.day || reason.day_of_week || "",
+      reason.blocked_start || "",
+      reason.blocked_end || "",
+    ]);
+
+    if (!blocked.has(key)) {
+      blocked.set(key, {
+        course_code: reason.course_code,
+        code: reason.code,
+        day: reason.day || reason.day_of_week,
+        blocked_start: shortTime(reason.blocked_start),
+        blocked_end: shortTime(reason.blocked_end),
+        indexes: [],
+        class_times: [],
+      });
+    }
+
+    const group = blocked.get(key);
+    if (reason.index_no != null && !group.indexes.includes(reason.index_no)) {
+      group.indexes.push(reason.index_no);
+    }
+    const classTime = [shortTime(reason.class_start), shortTime(reason.class_end)]
+      .filter(Boolean)
+      .join("–");
+    if (classTime && !group.class_times.includes(classTime)) {
+      group.class_times.push(classTime);
+    }
+  }
+
   const groups = new Map();
   for (const reason of raw) {
+    if (reason.code === "BLOCKED_PERIOD_CONFLICT") continue;
     if (general.has(reason.code) && raw.some(other =>
       other !== reason && other.course_code === reason.course_code && !general.has(other.code))) continue;
     const explanation = reason.explanation || reason.message || reason.code || "Review the planning request.";
@@ -236,13 +272,28 @@ export const generationProblem = (failure = {}) => {
     const indexes = groups.get(key).indexes;
     if (reason.index_no != null && !indexes.includes(reason.index_no)) indexes.push(reason.index_no);
   }
+
+  const blockedReasons = [...blocked.values()].map(group => ({
+    course_code: group.course_code,
+    code: group.code,
+    indexes: group.indexes,
+    explanation: [
+      `Your ${group.day || "saved"} ${group.blocked_start || ""}–${group.blocked_end || ""} block overlaps`,
+      group.class_times.length
+        ? `class time${group.class_times.length === 1 ? "" : "s"} ${group.class_times.join(", ")}.`
+        : "one or more class sessions.",
+      "Adjust or remove this block, or remove the course, then regenerate.",
+    ].join(" ").replace(/\s+/g, " ").trim(),
+  }));
+
   return {
     summary: failure.code === "SEARCH_LIMIT_REACHED"
       ? "The timetable search reached its limit. Feasibility is still unconfirmed."
       : failure.infeasibility_proven === true
         ? "No timetable satisfies the current courses and hard constraints."
         : "A validated timetable could not be generated.",
-    reasons: [...groups.values()],
+    reasons: [...blockedReasons, ...groups.values()],
     suggestions: unique(list(failure.suggestions).map(item => item.explanation || item.action)),
+    timetable_preserved: failure.code === "NO_FEASIBLE_PLAN",
   };
 };
