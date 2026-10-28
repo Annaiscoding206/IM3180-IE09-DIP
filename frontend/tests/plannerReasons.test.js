@@ -91,6 +91,24 @@ test("generation keeps distinct causes and courses separate even when wording is
   assert.equal(issue.reasons.length, 3);
 });
 
+test("generation groups blocked-period conflicts into actionable block guidance", () => {
+  const issue = generationProblem({ code: "NO_FEASIBLE_PLAN", infeasibility_proven: true, reasons: [
+    { code: "NO_VALID_INDEX", course_code: "CS2024", explanation: "No valid index." },
+    { code: "BLOCKED_PERIOD_CONFLICT", course_code: "CS2024", index_no: 32601,
+      block_id: 13, day: "THU", blocked_start: "09:00:00", blocked_end: "10:00:00",
+      class_start: "08:30:00", class_end: "09:20:00" },
+    { code: "BLOCKED_PERIOD_CONFLICT", course_code: "CS2024", index_no: 32602,
+      block_id: 13, day: "THU", blocked_start: "09:00:00", blocked_end: "10:00:00",
+      class_start: "08:30:00", class_end: "09:20:00" },
+  ] });
+
+  assert.equal(issue.reasons.length, 1);
+  assert.deepEqual(issue.reasons[0].indexes, [32601, 32602]);
+  assert.match(issue.reasons[0].explanation, /THU 09:00–10:00 block/);
+  assert.match(issue.reasons[0].explanation, /class time 08:30–09:20/);
+  assert.equal(issue.timetable_preserved, true);
+});
+
 test("search limits and incomplete evidence never become a proven infeasibility claim", () => {
   assert.match(generationProblem({ code: "SEARCH_LIMIT_REACHED" }).summary, /Feasibility is still unconfirmed/);
   assert.match(generationProblem({ code: "NO_FEASIBLE_PLAN", infeasibility_proven: false }).summary, /validated timetable/);

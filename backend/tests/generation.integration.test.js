@@ -271,6 +271,70 @@ test("generation against local MySQL and HTTP", { skip: process.env.RUN_MYSQL_TE
     }
     assert.deepEqual((await snapshot(id)).plans.find(p => p.plan_id === source), before.plans[0]);
   });
+  await t.test("single-plan regeneration preserves its blocks and locks without changing sibling plans", async () => {
+    const id = await request(["A", "B"]);
+    const target = await manual(id, "A", 103, true);
+    await pool.query(
+      "INSERT INTO plan_course (plan_id, course_code, index_no, locked) VALUES (?, ?, 201, FALSE)",
+      [target, codes.B]
+    );
+    const sibling = await manual(id, "A", 101);
+    await pool.query(
+      "INSERT INTO plan_course (plan_id, course_code, index_no, locked) VALUES (?, ?, 202, FALSE)",
+      [sibling, codes.B]
+    );
+    await pool.query(
+      `INSERT INTO plan_blocked_period (plan_id, day_of_week, start_time, end_time)
+       VALUES (?, 'WED', '15:00:00', '16:00:00'),
+              (?, 'THU', '15:00:00', '16:00:00')`,
+      [target, sibling]
+    );
+
+    const readPlanState = async planId => ({
+      plan: (await pool.query("SELECT * FROM plan WHERE plan_id = ?", [planId]))[0][0],
+      indexes: (await pool.query(
+        "SELECT course_code, index_no, locked FROM plan_course WHERE plan_id = ? ORDER BY course_code",
+        [planId]
+      ))[0],
+      blocks: (await pool.query(
+        `SELECT day_of_week, start_time, end_time
+         FROM plan_blocked_period WHERE plan_id = ? ORDER BY block_id`,
+        [planId]
+      ))[0],
+    });
+    const beforeTarget = await readPlanState(target);
+    const beforeSibling = await readPlanState(sibling);
+    const planCount = (await snapshot(id)).plans.length;
+
+    const result = await http("POST", `/plans/${target}/regenerate`);
+    assert.equal(result.status, 200, JSON.stringify(result));
+    assert.equal(result.data.plan_id, target);
+    const afterTarget = await readPlanState(target);
+    assert.deepEqual(afterTarget.blocks, beforeTarget.blocks);
+    assert.deepEqual(
+      afterTarget.indexes.find(row => row.course_code === codes.A),
+      beforeTarget.indexes.find(row => row.course_code === codes.A)
+    );
+    assert.notEqual(
+      afterTarget.indexes.find(row => row.course_code === codes.B).index_no,
+      beforeTarget.indexes.find(row => row.course_code === codes.B).index_no
+    );
+    assert.deepEqual(await readPlanState(sibling), beforeSibling);
+    assert.equal((await snapshot(id)).plans.length, planCount);
+
+    // An impossible locked index must fail atomically and preserve the plan.
+    await pool.query(
+      `INSERT INTO plan_blocked_period (plan_id, day_of_week, start_time, end_time)
+       VALUES (?, 'TUE', '09:00:00', '10:00:00')`,
+      [target]
+    );
+    const beforeFailure = await readPlanState(target);
+    const failed = await http("POST", `/plans/${target}/regenerate`);
+    assert.equal(failed.status, 422, JSON.stringify(failed));
+    assert.ok(failed.reasons.some(reason => reason.code === "LOCKED_INDEX_INVALID"));
+    assert.deepEqual(await readPlanState(target), beforeFailure);
+    assert.deepEqual(await readPlanState(sibling), beforeSibling);
+  });
   await t.test("impossible locked index explains constraints and leaves source unchanged", async () => {
     const id = await request(["C", "E"]);
     const source = await manual(id, "C", 301, true);
@@ -323,8 +387,8 @@ test("generation against local MySQL and HTTP", { skip: process.env.RUN_MYSQL_TE
       if (sql.includes("FOR UPDATE")) lockingStatements.push(sql);
       if (sql.startsWith("INSERT INTO plan_course")) throw new Error("Injected index persistence failure");
       const result = await originalQuery.call(this, sql, args);
-      if (sql.startsWith("INSERT INTO plan (")) insertedPlan = true;
-      if (sql.startsWith("UPDATE plan SET status = 'ARCHIVED'")) retiredPlan = true;
+      if (/^INSERT INTO plan\s*\(/.test(sql)) insertedPlan = true;
+      if (/^UPDATE plan\s+SET status = 'ARCHIVED'/.test(sql)) retiredPlan = true;
       return result;
     };
     try {

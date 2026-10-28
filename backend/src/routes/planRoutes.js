@@ -49,6 +49,11 @@ router.post(
   planScopeController.addPlanBlockedPeriod
 );
 
+router.post(
+  "/:planId/regenerate",
+  require("../controllers/generationController").regenerate
+);
+
 router.delete(
   "/:planId/blocked-periods/:blockId",
   planScopeController.removePlanBlockedPeriod

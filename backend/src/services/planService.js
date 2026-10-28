@@ -301,8 +301,15 @@ async function readSchedules(indexes, db) {
   const schedules = [];
   for (const index of indexes) {
     const [slots] = await db.query(
-      `SELECT slot_id, class_type, class_group, day_of_week, start_time, end_time, venue, teaching_weeks
-       FROM class_slots WHERE course_code = ? AND index_no = ? ORDER BY slot_id`,
+      `SELECT cs.slot_id, cs.class_type, cs.class_group, cs.day_of_week,
+              cs.start_time, cs.end_time, cs.venue, cs.teaching_weeks,
+              ci.course_name AS course_title
+       FROM class_slots cs
+       LEFT JOIN course_info ci
+         ON ci.course_code = cs.course_code
+        AND ci.index_no = cs.index_no
+       WHERE cs.course_code = ? AND cs.index_no = ?
+       ORDER BY cs.slot_id`,
       [index.course_code, index.index_no]
     );
     schedules.push({ ...index, slots });

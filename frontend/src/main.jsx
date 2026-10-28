@@ -6,6 +6,7 @@ import ReasonDialog from "./ReasonDialog";
 import { courseProblem } from "./reasonUtils";
 import "./styles.css";
 import ChatWidget from "./components/ChatWidget";
+import ExportPlan from "./ExportPlan";
 
 const STUDENT_ID = "DEMO001";
 
@@ -1127,8 +1128,16 @@ function App() {
   );
 }
 
+const exportPlanId = new URLSearchParams(
+  window.location.search
+).get("exportPlan");
+
 createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <App />
+    {exportPlanId ? (
+      <ExportPlan planId={exportPlanId} />
+    ) : (
+      <App />
+    )}
   </React.StrictMode>
 );

@@ -98,6 +98,8 @@ export const api = {
   removeBlock: (id, blockId) => json("DELETE", `/planning-requests/${id}/blocked-periods/${blockId}`),
   clearBlocks: (id) => json("DELETE", `/planning-requests/${id}/blocked-periods`),
   generatePlans: (id, sourcePlanId) => json("POST", `/planning-requests/${id}/generate-plans`, sourcePlanId ? { source_plan_id: sourcePlanId } : {}).then(b => b.data),
+  regeneratePlan: (planId) =>
+    json("POST", `/plans/${planId}/regenerate`).then((body) => body.data),
   updateTargetAu: (requestId, targetAu) =>
   json(
     "PATCH",
