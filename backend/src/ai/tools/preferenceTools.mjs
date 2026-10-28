@@ -2,7 +2,7 @@
 import { tool } from "@openai/agents";
 import { z } from "zod";
 import leo from "../../services/leoPlanningService.js";
-
+import planService from "../../services/planService.js";
 // Supported by our existing Smart STARS database schema.
 const dayCodes = [
   "MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"
@@ -46,6 +46,20 @@ const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
 // This function does not access or modify the database.
 export function buildPreferenceDraft(input) {
   const parsed = preferenceInputSchema.parse(input);
+
+  // Normalize valid HH:MM:00 values to HH:MM.
+  for (const preference of parsed.time_preferences) {
+    for (const field of ["start_time", "end_time"]) {
+      const value = preference[field];
+
+      if (
+        typeof value === "string" &&
+        /^([01]\d|2[0-3]):[0-5]\d:00$/.test(value)
+      ) {
+        preference[field] = value.slice(0, 5);
+      }
+    }
+  }
 
   const questions = [
     ...parsed.clarification_questions
@@ -131,10 +145,34 @@ export const interpretTimetablePreferencesTool = tool({
     SOFT means a flexible preference.
     UNSPECIFIED means the student's strictness is unclear.
 
+    When the student explicitly uses preference language
+    such as "I prefer", "I would prefer", or "I'd like",
+    classify the preference as SOFT unless the student
+    also specifies that it is mandatory.
+
+    Use HARD when the student clearly states that
+    something is compulsory, such as "I cannot attend",
+    "I must avoid", or "absolutely no classes".
+
+    Use UNSPECIFIED only when strictness is genuinely
+    unclear, such as "I don't want Friday classes"
+    without further explanation.
+
     Never invent an exact time range.
     If the student says "morning" or "afternoon"
     without specifying hours, use null for start_time
     and end_time and ask for clarification.
+
+    The buildPreferenceDraft function automatically
+    generates clarification questions for missing
+    time ranges and unspecified constraint levels.
+
+    Do not add these questions to clarification_questions
+    yourself.
+
+    Use clarification_questions only for other semantic
+    ambiguities that deterministic validation cannot
+    identify.
 
     If strictness is unclear, use UNSPECIFIED.
     Do not assume that "avoid" means HARD.
@@ -145,23 +183,90 @@ export const interpretTimetablePreferencesTool = tool({
     For objectives, assign priority 1 when no relative
     importance is specified.
 
-    Bind request_id only to an explicitly identified planning request; use null and ask if none was chosen. This tool creates a DRAFT only.
+    When the student provides an academic year and semester,
+    extract them into academic_year and semester.
+
+    Do not invent a planning request ID.
+
+    If request_id is unknown, pass null. The backend will
+    automatically identify the student's matching request
+    when there is exactly one match.
+
+    If the request remains ambiguous, ask the student
+    to clarify the academic term or planning request.When the student provides an academic year and semester,
+    extract them into academic_year and semester.
+
+    Do not invent a planning request ID.
+
+    If request_id is unknown, pass null. The backend will
+    automatically identify the student's matching request
+    when there is exactly one match.
+
+    If the request remains ambiguous, ask the student
+    to clarify the academic term or planning request.
     It does not save preferences or generate plans.
   `,
 
-  parameters: preferenceInputSchema.extend({ request_id: z.number().int().positive().nullable() }),
+parameters: preferenceInputSchema.extend({
+  request_id: z.number().int().positive().nullable(),
+  academic_year: z.string().nullable(),
+  semester: z.number().int().positive().nullable()
+}),
 
   async execute(input, runContext) {
-    console.log(
-      "[AI TOOL] interpret_timetable_preferences called"
-    );
+  console.log("[AI TOOL] interpret_timetable_preferences called");
 
-    let result = buildPreferenceDraft(input);
-    if (input.request_id !== null && runContext?.context?.studentId) {
-      try { result = await leo.stagePreferenceDraft(runContext.context, input.request_id, result); }
-      catch (error) { return JSON.stringify(leo.failure(error)); }
-    } else result = { ...result, request_id: null, binding_required: true };
-    if (runContext?.context) runContext.context.preferenceDraft = result;
-    return JSON.stringify(result);
+  let result = buildPreferenceDraft(input);
+
+  const studentId = runContext?.context?.studentId;
+  let requestId = input.request_id;
+
+  try {
+    // Resolve a planning request from the authenticated student.
+    if (requestId === null && studentId) {
+      const requests = await planService.listRequests(studentId);
+
+      const matchingRequests = requests.filter((request) =>
+        (input.academic_year === null ||
+          String(request.academic_year) === String(input.academic_year)) &&
+        (input.semester === null ||
+          Number(request.semester) === Number(input.semester))
+      );
+
+      // Automatically select only when there is one match.
+      if (matchingRequests.length === 1) {
+        requestId = Number(matchingRequests[0].request_id);
+      }
+    }
+
+    if (requestId !== null && studentId) {
+      result = await leo.stagePreferenceDraft(
+        runContext.context,
+        requestId,
+        result
+      );
+    } else {
+      result = {
+        ...result,
+        status: result.status === "no_preferences"
+          ? "no_preferences"
+          : "clarification_required",
+        request_id: null,
+        binding_required: true,
+        clarification_questions: [
+          ...result.clarification_questions,
+          "Which academic year and semester should these preferences apply to?"
+        ]
+      };
+    }
+  } catch (error) {
+    return JSON.stringify(leo.failure(error));
   }
+
+  if (runContext?.context) {
+    runContext.context.preferenceDraft = result;
+  }
+
+  return JSON.stringify(result);
+}
 });

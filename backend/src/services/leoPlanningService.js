@@ -92,8 +92,72 @@ async function getPlanningContext(studentId, requestId) {
     blocked_periods: (await preferences.getBlocks(requestId, studentId)).blocked_periods,
     plans: await summaries.getRequestPlanSummaries(requestId, studentId), active: await summaries.getActivePlan(requestId, studentId) };
 }
+
+// Resolve eligibility against an owned plan, never against the legacy
+// planning_request_course selection. An omitted plan is only inferred when
+// exactly one final plan is selected for the student (or supplied request).
+async function resolveEligibilityPlan(studentId, requestId = null, planId = null) {
+  if (!studentId) throw new plans.PlanningError(401, "Student identity required");
+  if (requestId !== null) plans.integer(requestId, "requestId");
+  if (planId !== null) plans.integer(planId, "planId");
+  if (requestId !== null) await summaries.requireOwnedRequest(requestId, studentId);
+
+  let selectedPlan = null;
+  if (planId !== null) {
+    const [rows] = await pool.query(
+      `SELECT p.plan_id, p.request_id, p.plan_name, p.status
+       FROM plan p
+       JOIN planning_request pr ON pr.request_id = p.request_id
+       WHERE p.plan_id = ? AND pr.student_id = ?`,
+      [planId, studentId]
+    );
+    if (!rows.length || (requestId !== null && Number(rows[0].request_id) !== Number(requestId))) {
+      throw new plans.PlanningError(404, "Plan not found for this student and request");
+    }
+    if (rows[0].status === "ARCHIVED") {
+      throw new plans.PlanningError(409, "Archived plans are not current planning context");
+    }
+    selectedPlan = rows[0];
+  } else {
+    let requests;
+    if (requestId !== null) {
+      requests = [{ request_id: requestId }];
+    } else {
+      [requests] = await pool.query("SELECT request_id FROM planning_request WHERE student_id = ?", [studentId]);
+    }
+    const choices = [];
+    for (const request of requests) {
+      const active = await summaries.getActivePlan(request.request_id, studentId);
+      if (active?.plan?.plan_id) choices.push({
+        plan_id: active.plan.plan_id,
+        request_id: request.request_id,
+        plan_name: active.plan.plan_name,
+        status: "SELECTED",
+      });
+    }
+    if (choices.length > 1) {
+      return { status: "clarification_required", message: "More than one selected timetable exists. Specify which plan to evaluate.", available_plans: choices };
+    }
+    selectedPlan = choices[0] ?? null;
+  }
+
+  if (!selectedPlan) {
+    return { status: "completed_courses_only", request_id: requestId, plan_id: null,
+      selected_course_codes: [], message: "No unambiguous selected plan was found; concurrent plan courses were not considered." };
+  }
+  const [courses] = await pool.query(
+    "SELECT course_code FROM plan_selected_course WHERE plan_id = ? ORDER BY course_code",
+    [selectedPlan.plan_id]
+  );
+  return { status: "plan_context", plan_id: selectedPlan.plan_id,
+    plan_name: selectedPlan.plan_name, request_id: selectedPlan.request_id,
+    plan_status: selectedPlan.status ?? null,
+    selection_scope: planId !== null ? "explicit_plan" : "confirmed_plan",
+    selected_course_codes: courses.map(row => row.course_code) };
+}
+
 function failure(error) {
   if (!(error instanceof plans.PlanningError)) throw error;
   return { status: "rejected", success: false, http_status: error.status, message: error.message, ...error.details };
 }
-module.exports = { parsePlanningCommand, stagePreferenceDraft, readDraft, confirmPreferenceDraft, generateForStudent, getPlanningContext, failure };
+module.exports = { parsePlanningCommand, stagePreferenceDraft, readDraft, confirmPreferenceDraft, generateForStudent, getPlanningContext, resolveEligibilityPlan, failure };

@@ -191,7 +191,26 @@ function App() {
             api.planningRequests(STUDENT_ID),
           ]);
 
-        const requestSummary = requests.at(-1) || null;
+        const now = new Date();
+
+        const currentAcademicYear =
+          now.getFullYear() - (now.getMonth() < 7 ? 1 : 0);
+
+        const requestSummary =
+          [...requests]
+            .filter((request) => {
+              const startYear = Number(
+                String(request.academic_year).slice(0, 4)
+              );
+
+              return Number.isInteger(startYear) &&
+                startYear <= currentAcademicYear;
+            })
+            .sort((a, b) =>
+              String(b.academic_year).localeCompare(String(a.academic_year)) ||
+              Number(b.semester) - Number(a.semester) ||
+              Number(b.request_id) - Number(a.request_id)
+            )[0] ?? requests[0] ?? null;
 
         const requestDetail = requestSummary
           ? await api.planningRequest(requestSummary.request_id)

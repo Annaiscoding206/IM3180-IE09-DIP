@@ -15,7 +15,10 @@ const insertLine = (table) => courseSql.split("\n").find((line) =>
 // prerequisites/restrictions. This fixture reader targets the seed's SQL format.
 const demoStudent = demoSql.match(/INSERT INTO student[\s\S]*?VALUES\s*\(\s*'([^']+)',\s*'[^']+',\s*'([^']+)'/);
 const seeded = {
-  students: [{ student_id: demoStudent[1], programme: demoStudent[2] }],
+  // DEMO001 has a verified 2024 DIRECT_ENTRY admission identity in the
+  // project's curriculum/degree-audit demo data.
+  students: [{ student_id: demoStudent[1], programme: demoStudent[2],
+    admission_year: 2024, admission_route: "DIRECT_ENTRY" }],
   courses: [...new Set([...insertLine("course_info").matchAll(/\('([^']+)',\d+,'/g)]
     .map((match) => match[1]))].map((course_code) => ({ course_code })),
   completed: [...demoSql.match(/INSERT INTO completed_course[\s\S]*?;/)[0]
@@ -164,7 +167,12 @@ function setup(change = () => {}) {
       "./corequisiteService": require("../src/services/corequisiteService"),
       "./mutualExclusionService": require("../src/services/mutualExclusionService"),
       "./degreeAuditService": require("../src/services/degreeAuditService"),
-      "./curriculumRulesService": require("../src/services/curriculumRulesService"),
+      "./curriculumRulesService": {
+        evaluateCurriculumYear: async () => ({
+          eligible: true,
+          minimum_study_year: null
+        })
+      },
     }
   );
   const planService = loadModule("backend/src/services/planService.js", {
@@ -346,17 +354,71 @@ test("matching NOT_AVAILABLE takes precedence over ONLY_AVAILABLE", async () => 
   assert.equal((await app.check("MH1810")).body.programme_eligible, false);
 });
 
-test("seeded IE4758 cohort rule is unknown and POST is blocked, not guessed", async () => {
+test("IE4758 is available to 2024 IEM Direct Entry once prerequisites are met", async () => {
   const app = setup((data) => data.completed.push({ student_id: "DEMO001", course_code: "IE1005" }));
   const { body } = await app.check("IE4758");
   assert.equal(body.prerequisite_eligible, true);
-  assert.equal(body.programme_eligible, null);
+  assert.equal(body.programme_eligible, true);
+  assert.equal(body.eligible, true);
+  assert.equal(body.requires_review, false);
+  assert.deepEqual(body.unresolved_restrictions, []);
+  assert.equal((await app.add("IE4758")).statusCode, 201);
+});
+
+test("IE4758 still rejects a 2024 IEM student missing IE1005 or EE1005", async () => {
+  const app = setup();
+  const { body } = await app.check("IE4758");
+  assert.equal(body.prerequisite_eligible, false);
+  assert.equal(body.programme_eligible, true);
   assert.equal(body.eligible, false);
-  assert.equal(body.requires_review, true);
-  assert.equal(body.unresolved_restrictions[0].cohort, "2019-2021 Direct Entry");
-  assert.match(body.message, /cohort data is unavailable/);
+  assert.equal(body.requires_review, false);
+  assert.deepEqual([...body.missing_prerequisite_groups[0].alternatives].sort(), ["EE1005", "IE1005"]);
   assert.equal((await app.add("IE4758")).statusCode, 422);
   assert.deepEqual(app.inserts, []);
+});
+
+test("IE4758 cohort exclusion applies to 2020 IEM Direct Entry", async () => {
+  const app = setup((data) => {
+    data.students[0].admission_year = 2020;
+    data.students[0].admission_route = "DIRECT_ENTRY";
+    data.completed.push({ student_id: "DEMO001", course_code: "IE1005" });
+  });
+  const { body } = await app.check("IE4758");
+  assert.equal(body.prerequisite_eligible, true);
+  assert.equal(body.programme_eligible, false);
+  assert.equal(body.eligible, false);
+  assert.equal(body.requires_review, false);
+  assert.match(body.message, /programme and admission cohort/);
+  assert.equal((await app.add("IE4758")).statusCode, 422);
+});
+
+test("IE4758 cohort exclusion does not apply to a 2020 normal-entry student", async () => {
+  const app = setup((data) => {
+    data.students[0].admission_year = 2020;
+    data.students[0].admission_route = "NORMAL_ENTRY";
+    data.completed.push({ student_id: "DEMO001", course_code: "IE1005" });
+  });
+  assert.equal((await app.check("IE4758")).body.programme_eligible, true);
+});
+
+test("missing admission route for an in-range cohort still requires review", async () => {
+  const app = setup((data) => {
+    data.students[0].admission_year = 2020;
+    data.students[0].admission_route = null;
+  });
+  const { body } = await app.check("IE4758");
+  assert.equal(body.programme_eligible, null);
+  assert.equal(body.requires_review, true);
+});
+
+test("unrecognised cohort text remains unknown and cannot be silently ignored", async () => {
+  const app = setup((data) => {
+    data.completed = [];
+    data.restrictions = [rule("NOT_AVAILABLE", "IEM", "Special intake")];
+  });
+  const { body } = await app.check("MH1810");
+  assert.equal(body.programme_eligible, null);
+  assert.equal(body.requires_review, true);
 });
 
 test("cohort NOT_AVAILABLE for another programme does not block", async () => {

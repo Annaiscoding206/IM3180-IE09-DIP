@@ -14,6 +14,26 @@ class EligibilityNotFoundError extends Error {
 
 const normalizeCode = (value) => value.trim().toUpperCase();
 
+// A deliberately narrow parser: recognise only an explicit admission-year range
+// followed by Direct Entry. Unknown cohort text remains review-required.
+function appliesToDirectEntryCohort(cohort, student) {
+  const label = String(cohort || "").trim().replace(/[\u2013\u2014]/g, "-");
+  const match = /^(\d{4})\s*-\s*(\d{4})\s+Direct\s+Entry$/i.exec(label);
+  if (!match) return null;
+
+  const startYear = Number(match[1]);
+  const endYear = Number(match[2]);
+  const admissionYear = Number(student.admission_year);
+  if (startYear > endYear || !Number.isInteger(admissionYear) || admissionYear < 1900) return null;
+  if (admissionYear < startYear || admissionYear > endYear) return false;
+
+  const route = String(student.admission_route || "")
+    .trim().replace(/[\s-]+/g, "_").toUpperCase();
+  if (route === "DIRECT_ENTRY") return true;
+  if (["NORMAL_ENTRY", "NORMAL", "STANDARD_ENTRY", "STANDARD"].includes(route)) return false;
+  return null;
+}
+
 // Optional query executor keeps plan validation on its transaction connection.
 const evaluateEligibility = async (
   studentId,
@@ -140,21 +160,31 @@ const mutualExclusionResult = checkMutualExclusions(
     normalizeCode(rule.programme) === normalizeCode(student.programme);
   const hasCohort = (rule) => Boolean(rule.cohort && rule.cohort.trim());
   const generalRules = restrictions.filter((rule) => !hasCohort(rule));
-  const blocked = generalRules.some((rule) =>
+  const blockedByGeneralRule = generalRules.some((rule) =>
     rule.restriction_type === "NOT_AVAILABLE" && matchesProgramme(rule)
   );
   const allowedProgrammes = generalRules.filter((rule) =>
     rule.restriction_type === "ONLY_AVAILABLE"
   );
 
-  // Legacy programme_restriction.cohort is unstructured text, not the new numeric
-  // curriculum admission_year. Do not guess how those historical labels map.
-  // A cohort-only allowlist may affect any programme; a cohort-only denial
-  // matters only for its named programme. Report uncertainty and block adding
-  // until it can be resolved, without claiming the student violates that rule.
+  // A recognised NOT_AVAILABLE restriction blocks only the named programme and
+  // matching admission cohort. Unsupported formats remain unknown, never guessed.
+  const blockedByCohort = restrictions.some((rule) =>
+    hasCohort(rule) &&
+    rule.restriction_type === "NOT_AVAILABLE" &&
+    matchesProgramme(rule) &&
+    appliesToDirectEntryCohort(rule.cohort, student) === true
+  );
+  const blocked = blockedByGeneralRule || blockedByCohort;
+
+  // Cohort-specific ONLY_AVAILABLE rules still need review: their relationship
+  // with other programme allowlists cannot safely be inferred from legacy text.
   const unresolvedRestrictions = restrictions.filter((rule) =>
     hasCohort(rule) &&
-    (rule.restriction_type === "ONLY_AVAILABLE" || matchesProgramme(rule))
+    (rule.restriction_type === "ONLY_AVAILABLE" ||
+      (rule.restriction_type === "NOT_AVAILABLE" &&
+       matchesProgramme(rule) &&
+       appliesToDirectEntryCohort(rule.cohort, student) === null))
   );
 
   let programmeEligible = true;
@@ -187,9 +217,11 @@ if (mutualExclusionResult.conflicting_selected_courses.length > 0) {
     reasons.push("Missing prerequisite groups: complete at least one alternative in each missing group");
   }
   if (blocked) {
-    // A definite general denial remains decisive, even if other rules are unknown.
+    // A definite denial remains decisive, even if other rules are unknown.
     programmeEligible = false;
-    reasons.push("Course is not available to your programme");
+    reasons.push(blockedByGeneralRule
+      ? "Course is not available to your programme"
+      : "Course is not available to your programme and admission cohort");
   } else if (unresolvedRestrictions.length > 0) {
     programmeEligible = null;
     reasons.push("Programme eligibility cannot be confirmed: cohort data is unavailable; manual review is required");

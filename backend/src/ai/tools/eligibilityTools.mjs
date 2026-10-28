@@ -2,12 +2,15 @@ import pool from "../../config/db.js";
 import { tool } from "@openai/agents";
 import { z } from "zod";
 import eligibilityService from "../../services/eligibilityService.js";
+import leo from "../../services/leoPlanningService.js";
+import plans from "../../services/planService.js";
 
 // Retrieve eligibility from the existing backend service.
 export async function loadCourseEligibility(
   studentId,
   courseCode,
-  requestId = null
+  requestId = null,
+  planId = null
 ) {
   if (!studentId) {
     return {
@@ -38,15 +41,22 @@ export async function loadCourseEligibility(
     };
   }
 
+  if (planId !== null && (!Number.isSafeInteger(planId) || planId <= 0)) {
+    return { status: "invalid_plan_id", message: "Invalid timetable plan." };
+  }
+
   try {
-    // Reuse the existing eligibility service.
-    // Passing undefined uses its default database pool.
+    // Only owned, explicit or uniquely confirmed plans can supply
+    // concurrently selected courses; never read legacy request selections.
+    const planContext = await leo.resolveEligibilityPlan(studentId, requestId, planId);
+    if (planContext.status === "clarification_required") return planContext;
 
 const result = await eligibilityService.evaluateEligibility(
   studentId,
   code,
   undefined,
-  requestId
+  planContext.status === "plan_context" ? planContext.request_id : null,
+  planContext.status === "plan_context" ? planContext.selected_course_codes : null
 );
 
 // Retrieve the actual prerequisite and corequisite
@@ -75,6 +85,14 @@ return {
   status: "ok",
   data: {
     ...result,
+    planning_context: {
+      scope: planContext.status,
+      request_id: planContext.request_id,
+      plan_id: planContext.plan_id,
+      plan_name: planContext.plan_name ?? null,
+      selection_scope: planContext.selection_scope ?? null,
+      message: planContext.message ?? null
+    },
 
     recorded_course_requirements: {
       prerequisites: requirements
@@ -112,6 +130,9 @@ return {
       };
     }
 
+    // Owned-plan/request validation must not crash the agent or expose data.
+    if (error instanceof plans.PlanningError) return leo.failure(error);
+
     throw error;
   }
 }
@@ -131,6 +152,8 @@ export const checkCourseEligibilityTool = tool({
     Use this tool whenever a student asks whether
     they can take, select or qualify for a course.
 
+    For a specific draft plan, pass its verified plan_id.
+    Otherwise use the uniquely confirmed plan; never guess a plan.
     Distinguish can_select from eligible.
     Explain missing requirements and review flags.
     Never invent eligibility results.
@@ -139,10 +162,13 @@ export const checkCourseEligibilityTool = tool({
   parameters: z.object({
     course_code: z.string().describe(
       "NTU course code, such as MH1811 or IE3012."
+    ),
+    plan_id: z.number().int().positive().nullable().describe(
+      "Plan ID when the student identifies a specific owned plan; otherwise null."
     )
   }),
 
-  async execute({ course_code }, runContext) {
+  async execute({ course_code, plan_id }, runContext) {
     console.log(
       "[AI TOOL] check_course_eligibility called:",
       course_code
@@ -151,15 +177,15 @@ export const checkCourseEligibilityTool = tool({
     // Student identity comes from trusted backend context.
     const studentId = runContext?.context?.studentId;
 
-    // Future website integration can supply an authenticated
-    // active planning request, if one is selected.
+    // Never infer courses from the request's legacy shared course list.
     const requestId =
       runContext?.context?.activeRequestId ?? null;
 
     const result = await loadCourseEligibility(
       studentId,
       course_code,
-      requestId
+      requestId,
+      plan_id ?? null
     );
 
     return JSON.stringify(result);
