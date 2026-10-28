@@ -16,7 +16,7 @@ How to start up
 
 
 
-3: Go to front end and back end folder and type the following:
+3: Go to front end and back end folder in powershell and type the following to run:
 
 &#x09;npm.cmd start (Back end)
 
