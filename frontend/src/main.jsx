@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { api } from "./api";
 import Planner, { forgetStoredCourseLocks } from "./Planner";
+import StudentProfile from "./profile";
 import ReasonDialog from "./ReasonDialog";
 import { courseProblem } from "./reasonUtils";
 import "./styles.css";
@@ -457,7 +458,12 @@ function App() {
             <b>{selected.length}</b>
           </button>
 
-          <button className="nav-item" type="button">
+          <button className={`nav-item ${
+              page === "profile" ? "active" : ""
+            }`} 
+		  type="button"
+		  onClick={() => setPage("profile")}
+		  >
             <Icon name="user" />
             <span>Student profile</span>
           </button>
@@ -494,7 +500,11 @@ function App() {
             <span>Academic planning</span>
             <i>/</i>
             <strong>
-              {page === "planner" ? "My planner" : "Course explorer"}
+              {page === "planner" 
+				? "My planner"
+				: page === "profile"
+				? "Student profile"
+				: "Course explorer"}
             </strong>
           </div>
 
@@ -526,7 +536,14 @@ function App() {
               onRemoveCourse={(code) => changeCourse(code, true)}
               onBackToExplorer={() => setPage("explorer")}
             />
-          ) : (
+          ) : page === "profile" ? (
+            <StudentProfile 
+			student = {student}
+			semester={currentSemester}
+			academicYear={displayYear(currentYear)}
+			courses={courses}
+			/>
+          ):(
             <>
               <section className="hero">
                 <div>

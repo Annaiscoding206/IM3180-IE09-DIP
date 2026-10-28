@@ -66,14 +66,37 @@ const getStudentById = async (req, res) => {
       `,
       [studentId]
     );
+	
+	const [auditEntries] = await pool.query(
+      `
+      SELECT course_code, course_title, taken_year,
+	  taken_semester, au, grade
+      FROM demo_degree_audit
+      WHERE student_id = ?
+      ORDER BY taken_year, taken_semester`,
+      [studentId]
+    );
+	
+	const [curriculumRows] = await pool.query(
+      `
+      SELECT programme, course_code, course_name, course_year, 
+	  course_semester, type_code, au, prerequisite_note
+      FROM demo_IEM_curriculum
+      WHERE programme = ?
+      ORDER BY course_year, course_semester, course_code`,
+      [students[0].programme]
+    );
 
     res.status(200).json({
       success: true,
       data: {
         ...students[0],
         completed_courses: completedCourses.map((row) => row.course_code),
+		degree_audit: auditEntries,
+		programme_curriculum: curriculumRows,
       },
     });
+	
   } catch (error) {
     console.error("Error fetching student:", error);
 
