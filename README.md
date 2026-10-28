@@ -8,7 +8,7 @@ How to start up
 
 
 
-1: Run 06\_demo\_degree\_audit.sql \& 07\_IEM\_curriculum.sql in the MySQL Workbench.
+1: Run 06\_demo\_degree\_audit.sql \& 07\_IEM\_curriculum.sql in the MySQL Workbench if you do not have Degree Audit table \& IEM Curriculum table.
 
 
 
