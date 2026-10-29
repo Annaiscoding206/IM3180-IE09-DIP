@@ -8,6 +8,7 @@ import { courseProblem } from "./reasonUtils";
 import "./styles.css";
 import ChatWidget from "./components/ChatWidget";
 import ExportPlan from "./ExportPlan";
+import StudentProfile from "./StudentProfile";
 
 const STUDENT_ID = "DEMO001";
 
@@ -184,6 +185,7 @@ function App() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [loadRevision, setLoadRevision] = useState(0);
   const [activeCourse, setActiveCourse] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
@@ -201,6 +203,8 @@ function App() {
     let cancelled = false;
 
     const load = async () => {
+      setLoading(true);
+      setError("");
       try {
         const [studentData, courseData, requests] =
           await Promise.all([
@@ -285,7 +289,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadRevision]);
 
   useEffect(() => {
     if (loading || !student) return;
@@ -559,7 +563,8 @@ function App() {
             <b>{selected.length}</b>
           </button>
 
-          <button className="nav-item" type="button">
+          <button className={`nav-item ${page === "profile" ? "active" : ""}`} type="button"
+            aria-current={page === "profile" ? "page" : undefined} onClick={() => setPage("profile")}>
             <Icon name="user" />
             <span>Student profile</span>
           </button>
@@ -596,7 +601,7 @@ function App() {
             <span>Academic planning</span>
             <i>/</i>
             <strong>
-              {page === "planner" ? "My planner" : "Course explorer"}
+              {page === "planner" ? "My planner" : page === "profile" ? "Student profile" : "Course explorer"}
             </strong>
           </div>
 
@@ -636,6 +641,10 @@ function App() {
                 setPlanningRequest(updatedRequest)
               }
             />
+          ) : page === "profile" ? (
+            <StudentProfile studentId={STUDENT_ID} workingPlanId={workingPlanId}
+              selectionRevision={selectionRevision} planningLoading={loading} planningError={error}
+              onRetryPlanning={() => setLoadRevision(n => n + 1)} />
           ) : (
             <>
               <section className="hero">
@@ -650,7 +659,9 @@ function App() {
                     prerequisites, and add courses to your semester plan.
                   </p>
                 </div>
-
+                <button className="degree-audit" type="button" onClick={() => setPage("profile")}>
+                  Degree audit &amp; curriculum <span aria-hidden="true">↗</span>
+                </button>
               </section>
 
               <section
@@ -1172,7 +1183,8 @@ const exportPlanId = new URLSearchParams(
   window.location.search
 ).get("exportPlan");
 
-createRoot(document.getElementById("root")).render(
+export const appRoot = createRoot(document.getElementById("root"));
+appRoot.render(
   <React.StrictMode>
     {exportPlanId ? (
       <ExportPlan planId={exportPlanId} />

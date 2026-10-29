@@ -1,0 +1,37 @@
+.student-profile { min-width: 0; user-select: text; }
+.profile-panel { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: clamp(16px, 3vw, 28px); margin-bottom: 24px; min-width: 0; }
+.profile-panel h2 { font-size: 22px; margin: 0 0 20px; }
+.profile-panel h3 { font-size: 17px; margin: 24px 0 14px; }
+.profile-personal { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+.profile-avatar { width: 64px; height: 64px; flex-basis: 64px; font-size: 20px; }
+.profile-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 18px; margin: 16px 0; flex: 1; }
+.profile-fields dt, .profile-requirements dt { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+.profile-fields dd, .profile-requirements dd { margin: 0; overflow-wrap: anywhere; }
+.profile-metrics { background: var(--soft); padding: 16px; border-radius: 12px; }
+.profile-metrics dd { font-size: 19px; font-weight: 700; }
+.profile-requirements { display: grid; gap: 14px; margin-bottom: 0; }
+.profile-help { color: var(--muted); line-height: 1.6; }
+.profile-warning, .profile-feedback { background: var(--amber-soft); padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; line-height: 1.6; }
+.profile-feedback button { padding: 9px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+.profile-code { font-size: 12px; }
+.profile-context { border-left: 4px solid var(--red); background: var(--soft); padding: 16px; border-radius: 8px; line-height: 1.6; }
+.profile-context p { margin: 6px 0 0; }
+.profile-categories { display: grid; gap: 16px; margin-top: 24px; }
+.profile-category { border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+.profile-category > h3 { margin-top: 0; }
+.profile-group { border-left: 3px solid var(--line); padding-left: 16px; margin-top: 18px; }
+.profile-table-scroll { max-height: 520px; overflow: auto; margin-top: 20px; border: 1px solid var(--line); border-radius: 10px; }
+.profile-table-scroll table { width: 100%; min-width: 760px; border-collapse: separate; border-spacing: 0; font-size: 13px; text-align: left; }
+.profile-table-scroll caption { text-align: left; padding: 14px; color: var(--muted); }
+.profile-table-scroll th, .profile-table-scroll td { padding: 14px; border-bottom: 1px solid var(--line); vertical-align: top; line-height: 1.5; }
+.profile-table-scroll thead th { position: sticky; top: 0; background: var(--soft); z-index: 1; }
+.profile-course-title { display: block; min-width: 170px; font-weight: 400; margin-top: 5px; }
+.profile-badge { display: inline-block; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; background: var(--soft); white-space: nowrap; }
+.profile-badge.result-PASSED, .profile-badge.status-COMPLETED { color: var(--green); background: var(--green-soft); }
+.profile-badge.result-FAILED { color: var(--red-deep); background: var(--red-soft); }
+.profile-badge.result-IN_PROGRESS, .profile-badge.status-PLANNED { color: var(--amber); background: var(--amber-soft); }
+.student-profile :focus-visible { outline: 3px solid var(--red); outline-offset: 3px; }
+@media (max-width: 600px) {
+  .profile-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); min-width: 100%; }
+  .profile-category { padding: 12px; }
+}

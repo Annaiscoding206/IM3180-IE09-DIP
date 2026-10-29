@@ -1,12 +1,27 @@
 // One generation token covers the entire refresh, including errors. Invalidating
 // on a switch/mutation prevents an older plan's response from being committed.
-export function createPlanningContextLoader(api) {
+export function createLatestRequest() {
   let generation = 0;
   return {
     invalidate() { generation++; },
-    async load(studentId, planId, onData, onError) {
+    async load(request, onData, onError) {
       const current = ++generation;
       try {
+        const data = await request();
+        if (current === generation) onData(data);
+      } catch (error) {
+        if (current === generation) onError(error);
+      }
+    },
+  };
+}
+
+export function createPlanningContextLoader(api) {
+  const latest = createLatestRequest();
+  return {
+    invalidate: latest.invalidate,
+    load(studentId, planId, onData, onError) {
+      return latest.load(async () => {
         const [courses, curriculum] = await Promise.all([
           api.courses(planId),
           api.curriculum(studentId, planId).catch(error => {
@@ -21,10 +36,8 @@ export function createPlanningContextLoader(api) {
           return { ...course, eligibility,
             ...(requirement ? { curriculum_status: requirement.status } : {}) };
         }));
-        if (current === generation) onData({ courses: annotated, curriculum });
-      } catch (error) {
-        if (current === generation) onError(error);
-      }
+        return { courses: annotated, curriculum };
+      }, onData, onError);
     },
   };
 }

@@ -79,6 +79,8 @@ export const api = {
   course: (code, planId) => request(`/courses/${encodeURIComponent(code)}${planQuery(planId)}`).then((body) => body.data),
   timetable: (code, indexNo) => request(`/courses/${encodeURIComponent(code)}/indexes/${indexNo}/timetable`).then((body) => body.data),
   student: (studentId) => request(`/students/${encodeURIComponent(studentId)}`).then((body) => body.data),
+  degreeAudit: (studentId) => request(`/students/${encodeURIComponent(studentId)}/degree-audit`).then(body => body.data),
+  curriculumProgress: (studentId, planId) => request(`/students/${encodeURIComponent(studentId)}/curriculum/progress${planQuery(planId)}`).then(body => body.data),
   curriculum: (studentId, planId) => request(`/students/${encodeURIComponent(studentId)}/curriculum${planQuery(planId)}`).then(body => body.data),
   eligibility: (studentId, code, planId) =>
     request(`/students/${encodeURIComponent(studentId)}/eligibility/${encodeURIComponent(code)}${planQuery(planId)}`),
