@@ -147,7 +147,7 @@ test("alternative indexes and generation explanations against MySQL/HTTP", { ski
   });
   await t.test("blocked-period alternatives and concrete block remediation", async () => {
     const c = await context(["A"], [["A", 101]]);
-    const block = await prefs.addBlock(c.request, student, { day_of_week: "MON", start_time: "09:30", end_time: "10:30" });
+    const block = await require("../src/services/planScopedService").addBlock(c.plan, student, { day_of_week: "MON", start_time: "09:30", end_time: "10:30" });
     const { data } = await get(c);
     const conflict = reason(data, "BLOCKED_PERIOD_CONFLICT");
     assert.ok(Number(conflict.block_id) > 0);

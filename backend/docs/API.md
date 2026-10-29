@@ -6,11 +6,11 @@ Local base URL: `http://127.0.0.1:5001/api`. JSON request bodies use `Content-Ty
 
 Most successful operations return `{ "success": true, "data": ... }`; list endpoints often add `count`. Eligibility and the existing timetable endpoints have the specific envelopes shown below. Errors return `{ "success": false, "message": "..." }`, optionally with `code`, `validation`, `reasons`, `suggestions` or other evidence. IDs in examples are illustrative; use IDs returned by your database.
 
-Planning requests own selected **course codes** in `planning_request_course`. Each child plan owns chosen **course/index pairs** in `plan_course`. `request_id` and `plan_id` are never interchangeable. The legacy `/plans/:requestId/courses` route deliberately takes a request ID.
+Each independent plan owns selected **course codes** in `plan_selected_course`, blocked periods in `plan_blocked_period`, and chosen **course/index pairs** in `plan_course`. Selection does not require an index. `request_id` and `plan_id` are never interchangeable. `planning_request_course` and `/plans/:requestId/courses` remain legacy request/bulk interfaces; their writes can mirror changes into nonarchived child plans. Request-level block writes are also legacy/bulk behavior. Updated frontend and Leo selection flows use plan-scoped selections, blocks and regeneration; callers must not use legacy writes to edit a single plan.
 
 Planning, Degree Audit and curriculum operations require a trusted server-side `res.locals.authenticatedStudentId`. For this local prototype, `DEMO_PLANNING_ENABLED=true`, a loopback connection, non-production mode and a permitted local Origin resolve that identity to `DEMO001`. A supplied body/query `student_id` is a scope check, never authentication. Root request create/list must match this identity (404 otherwise); foreign request/plan resources return 404. No browser identity header is accepted.
 
-Course catalogue reads are public; trusted/demo identity adds completion and curriculum annotations. Existing student list/detail/eligibility routes remain public demo APIs. They are not production authorization. Chat has a separate `DEMO_CHAT_ENABLED=true` opt-in and local-only access; see the chat section.
+Course catalogue reads are public; trusted/demo identity adds completion and curriculum annotations. Explicit catalogue planning context requires trusted identity. All student routes require trusted identity, with matching student scope for detail, eligibility, Degree Audit and Curriculum. Demo identity is not production authentication. Chat has a separate `DEMO_CHAT_ENABLED=true` opt-in and local-only access; see the chat section.
 
 Common HTTP statuses:
 
@@ -40,7 +40,7 @@ Malformed JSON is rejected by Express before controllers and may return HTML, ra
 | `GET /courses/:courseCode/indexes/:indexNo/timetable` | `{success,course_code,index_no,timetable_available,count,data:[session...]}`; valid pair with no slots is 200 with `[]`; unknown pair is 404 |
 | `GET /students` | Demo student list |
 | `GET /students/:studentId` | Profile, programme, study/admission years, route, `completed_courses`, `degree_audit_summary`, `curriculum_progress` |
-| `GET /students/:studentId/eligibility/:courseCode` | Optional owned `request_id` gives incremental selected-course context |
+| `GET /students/:studentId/eligibility/:courseCode` | Optional owned `plan_id`; omitted means academic-only; returns `planning_context` |
 
 Catalogue annotations include `is_completed`, `completion_status` (`Completed` / `Not completed`), `curriculum_status` (`COMPLETED`, `PLANNED`, `NOT_YET_TAKEN`), category/group, matching state and planning request ID. Completion comes from PASSED academic records, not browser state. Status and eligibility are separate.
 
@@ -57,8 +57,8 @@ The full response also includes corequisites, mutual exclusions, missing require
 | Method and path | Query / result |
 |---|---|
 | `GET /students/:studentId/degree-audit` | Optional `academic_year`, `semester` (1–3), `result` (`PASSED`, `FAILED`, `IN_PROGRESS`) |
-| `GET /students/:studentId/curriculum` | Optional owned `request_id` for planned-course context |
-| `GET /students/:studentId/curriculum/progress` | Same current curriculum/progress representation |
+| `GET /students/:studentId/curriculum` | Optional owned `plan_id` for planned-course context |
+| `GET /students/:studentId/curriculum/progress` | Same context query and current curriculum/progress representation |
 
 Example:
 
@@ -68,7 +68,17 @@ GET /api/students/DEMO001/degree-audit?academic_year=2025-2026&semester=2&result
 
 Degree Audit `data` contains `student_id`, `filters`, `records`, `passed_course_codes`, `earned_au`, `earned_au_complete`, `summary`, `filtered_summary` and `summary_scope:"all_academic_records"`. Each record has course code/title, nullable academic year/semester/grade, result, earned AU and provenance. Filters narrow `records` and `filtered_summary`; overall completion/AU remains across the full history. PASSED attempts count once per course; failed and in-progress attempts never count. Unknown legacy AU is reported as incomplete, not invented or silently treated as a known zero.
 
-Curriculum `data` contains `curriculum` (including `is_demo`), `matching`, `categories`, `courses`, `summary`, `degree_audit_summary`, and `planning_context`. Categories and elective groups expose required/completed/remaining AU and completed/remaining course requirements. Courses expose status and eligibility separately. Matching is exact programme/admission year/route, with route-independent matching only if the stored curriculum explicitly has a null route. No match: 404 `NO_CURRICULUM`; multiple matches: 409 `AMBIGUOUS_CURRICULUM`. The seeded curriculum is a synthetic prototype subset, not an official graduation audit. Without `request_id`, the service chooses the latest planning request for status context.
+Curriculum `data` contains `curriculum` (including `is_demo`), `matching`, `categories`, `courses`, `summary`, `degree_audit_summary`, and `planning_context`. Categories and elective groups expose required/completed/remaining AU and completed/remaining course requirements. Courses expose status and eligibility separately. Matching is exact programme/admission year/route, with route-independent matching only if the stored curriculum explicitly has a null route. No match: 404 `NO_CURRICULUM`; multiple matches: 409 `AMBIGUOUS_CURRICULUM`. The seeded curriculum is a synthetic prototype subset, not an official graduation audit.
+
+### Shared planning context
+
+Curriculum, student eligibility and authenticated catalogue annotations accept `plan_id` and optional matching `request_id`. Both IDs must be positive integers. No plan means `ACADEMIC_ONLY`, with `selected_course_codes: []`; no latest-request or legacy selection fallback occurs. Request alone returns 400 `PLAN_ID_REQUIRED`; a foreign/missing plan or mismatched request returns 404; an archived plan returns 409 `PLAN_ARCHIVED`. Reads do not initialize or backfill selections.
+
+Explicit context reports `scope: "EXPLICIT_PLAN"`, `plan_id`, `plan_name`, `plan_status`, `request_id`, `academic_year`, `semester`, `selection_source: "plan_selected_course"`, and `selected_course_codes`. Academic-only context reports the same fields with null metadata and an empty selection. Course catalogue list/detail accepts these context query parameters alongside catalogue filters.
+
+Status priority is PASSED → `COMPLETED`, otherwise selected in this explicit plan → `PLANNED`, otherwise `NOT_YET_TAKEN`. Sibling plans, stale request selections and index assignments never contribute to status. Degree Audit, completed courses and earned/completed AU remain student-wide. Selection-dependent corequisites and mutual exclusions use the same explicit selection set through the existing eligibility service; status is not an eligibility result.
+
+Leo uses this resolver after resolving an explicit plan or exactly one currently valid confirmed plan. With no unambiguous plan it asks for clarification, including before regeneration. Frontend callers pass `workingPlanId` and invalidate selection-dependent requests on plan changes and course edits; late responses cannot replace current-plan data.
 
 No public academic-record/profile/curriculum mutation or upload endpoints are implemented. Internal seed/import/profile services own validation and invalidation; direct SQL bypasses these writers, so final/selected retrieval still revalidates current data.
 

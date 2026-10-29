@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { createPlanningContextLoader } from "./planningContext";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { api } from "./api";
 import Planner from "./Planner";
@@ -7,6 +8,7 @@ import { courseProblem } from "./reasonUtils";
 import "./styles.css";
 import ChatWidget from "./components/ChatWidget";
 import ExportPlan from "./ExportPlan";
+import StudentProfile from "./StudentProfile";
 
 const STUDENT_ID = "DEMO001";
 
@@ -150,12 +152,29 @@ function App() {
   const [planningRequest, setPlanningRequest] = useState(null);
   const [selectedCodes, setSelectedCodes] = useState([]);
   const [workingPlanId, setWorkingPlanId] = useState(null);
+  const [selectionRevision, setSelectionRevision] = useState(0);
+  const contextLoader = useRef(createPlanningContextLoader(api));
+  const contextKey = useRef(null);
+  const workingPlanRef = useRef(workingPlanId);
+  workingPlanRef.current = workingPlanId;
+  const detailGeneration = useRef(0);
+  // Invalidate immediately during a context render, before effects run.
+  const nextContextKey = `${workingPlanId}:${selectionRevision}`;
+  if (contextKey.current !== nextContextKey) {
+    contextLoader.current.invalidate();
+    contextKey.current = nextContextKey;
+  }
+  const refreshSelectionContext = () => {
+    contextLoader.current.invalidate();
+    setSelectionRevision(value => value + 1);
+  };
   const [page, setPage] = useState(() => {
   return sessionStorage.getItem("smart-stars-page") || "explorer";});
   useEffect(() => {
   sessionStorage.setItem("smart-stars-page", page);}, [page]);
   const [savingCourse, setSavingCourse] = useState(false);
   const [actionError, setActionError] = useState("");
+  const [contextError, setContextError] = useState("");
   const [reasonProblem, setReasonProblem] = useState(null);
 
   const [query, setQuery] = useState("");
@@ -166,6 +185,7 @@ function App() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [loadRevision, setLoadRevision] = useState(0);
   const [activeCourse, setActiveCourse] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
@@ -183,6 +203,8 @@ function App() {
     let cancelled = false;
 
     const load = async () => {
+      setLoading(true);
+      setError("");
       try {
         const [studentData, courseData, requests] =
           await Promise.all([
@@ -233,24 +255,6 @@ function App() {
           ? (await api.planSelectedCourses(initialPlan.plan_id))
               .map((row) => row.course_code)
           : [];
-        const eligibility = await Promise.all(
-          courseData.map(async (course) => {
-            try {
-              const result = await api.eligibility(
-                STUDENT_ID,
-                course.course_code,
-                requestDetail?.request_id
-              );
-
-              return [course.course_code, result];
-            } catch {
-              return [course.course_code, null];
-            }
-          })
-        );
-
-        const eligibilityMap = Object.fromEntries(eligibility);
-
         if (!cancelled) {
           setStudent(studentData);
           setPlanningRequest(requestDetail);
@@ -260,7 +264,7 @@ function App() {
           setCourses(
             courseData.map((course) => ({
               ...course,
-              eligibility: eligibilityMap[course.course_code],
+              eligibility: null,
             }))
           );
 
@@ -285,7 +289,19 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadRevision]);
+
+  useEffect(() => {
+    if (loading || !student) return;
+    setCourses(current => current.map(course => ({ ...course, eligibility: null, curriculum_status: null })));
+    detailGeneration.current++;
+    setActiveCourse(null);
+    setContextError("");
+    contextLoader.current.load(STUDENT_ID, workingPlanId,
+      ({ courses: refreshed }) => setCourses(refreshed),
+      error => setContextError(error.message || "Could not refresh planning context."));
+    return () => contextLoader.current.invalidate();
+  }, [loading, student, workingPlanId, selectionRevision]);
 
   const completedCodes = useMemo(
     () => new Set(student?.completed_courses || []),
@@ -392,9 +408,11 @@ function App() {
         }
 
         planId = chosenPlan.plan_id;
+        workingPlanRef.current = planId;
         setWorkingPlanId(planId);
       }
 
+      contextLoader.current.invalidate();
       if (removing) {
         await api.removePlanSelectedCourse(planId, code);
       } else {
@@ -403,12 +421,14 @@ function App() {
 
       const stored = await api.planSelectedCourses(planId);
 
-      setSelectedCodes(
+      if (workingPlanRef.current === planId) setSelectedCodes(
         stored.map((item) => item.course_code)
       );
 
+      refreshSelectionContext();
       return true;
     } catch (changeError) {
+      refreshSelectionContext();
       setActionError(changeError.message);
       throw changeError;
     } finally {
@@ -455,11 +475,14 @@ function App() {
   };
 
   const openDetails = async (course) => {
+    const detailToken = ++detailGeneration.current;
+    const requestedPlan = workingPlanId;
+    const isCurrent = () => detailToken === detailGeneration.current && requestedPlan === workingPlanRef.current;
     setActiveCourse({ ...course, indexes: null });
     setDetailLoading(true);
 
     try {
-      const detail = await api.course(course.course_code);
+      const detail = await api.course(course.course_code, workingPlanId);
 
       const indexes = await Promise.all(
         detail.indexes.map(async (index) => {
@@ -476,15 +499,15 @@ function App() {
         })
       );
 
-      setActiveCourse({ ...course, ...detail, indexes });
+      if (isCurrent()) setActiveCourse({ ...course, ...detail, indexes });
     } catch (detailError) {
-      setActiveCourse({
+      if (isCurrent()) setActiveCourse({
         ...course,
         indexes: [],
         detailError: detailError.message,
       });
     } finally {
-      setDetailLoading(false);
+      if (isCurrent()) setDetailLoading(false);
     }
   };
 
@@ -540,7 +563,8 @@ function App() {
             <b>{selected.length}</b>
           </button>
 
-          <button className="nav-item" type="button">
+          <button className={`nav-item ${page === "profile" ? "active" : ""}`} type="button"
+            aria-current={page === "profile" ? "page" : undefined} onClick={() => setPage("profile")}>
             <Icon name="user" />
             <span>Student profile</span>
           </button>
@@ -577,7 +601,7 @@ function App() {
             <span>Academic planning</span>
             <i>/</i>
             <strong>
-              {page === "planner" ? "My planner" : "Course explorer"}
+              {page === "planner" ? "My planner" : page === "profile" ? "Student profile" : "Course explorer"}
             </strong>
           </div>
 
@@ -607,6 +631,8 @@ function App() {
               courses={courses}
               preferredPlanId={workingPlanId}
               onPlanChanged={(planId, codes) => {
+                refreshSelectionContext();
+                workingPlanRef.current = planId;
                 setWorkingPlanId(planId);
                 setSelectedCodes(codes);
               }}
@@ -615,6 +641,10 @@ function App() {
                 setPlanningRequest(updatedRequest)
               }
             />
+          ) : page === "profile" ? (
+            <StudentProfile studentId={STUDENT_ID} workingPlanId={workingPlanId}
+              selectionRevision={selectionRevision} planningLoading={loading} planningError={error}
+              onRetryPlanning={() => setLoadRevision(n => n + 1)} />
           ) : (
             <>
               <section className="hero">
@@ -629,7 +659,9 @@ function App() {
                     prerequisites, and add courses to your semester plan.
                   </p>
                 </div>
-
+                <button className="degree-audit" type="button" onClick={() => setPage("profile")}>
+                  Degree audit &amp; curriculum <span aria-hidden="true">↗</span>
+                </button>
               </section>
 
               <section
@@ -655,15 +687,15 @@ function App() {
                 </div>
               </section>
 
-              {actionError && (
+              {(actionError || contextError) && (
                 <section
                   className="curriculum-note connection-error"
                   role="alert"
                 >
                   <span className="note-icon">!</span>
                   <div>
-                    <strong>Could not update selected courses</strong>
-                    <p>{actionError}</p>
+                    <strong>{actionError ? "Could not update selected courses" : "Could not refresh planning context"}</strong>
+                    <p>{actionError || contextError}</p>
                   </div>
                 </section>
               )}
@@ -1151,7 +1183,8 @@ const exportPlanId = new URLSearchParams(
   window.location.search
 ).get("exportPlan");
 
-createRoot(document.getElementById("root")).render(
+export const appRoot = createRoot(document.getElementById("root"));
+appRoot.render(
   <React.StrictMode>
     {exportPlanId ? (
       <ExportPlan planId={exportPlanId} />

@@ -102,6 +102,8 @@ function actionReply(result) {
       "Would you like me to compare the class times or show " +
       "one of these plans in more detail?"
     );
+  } else if (generation.status === "clarification_required") {
+    lines.push(generation.message);
   } else if (generation.status === "rejected") {
     lines.push(generation.message);
     for (const reason of generation.reasons || []) lines.push(`${reason.code}: ${reason.explanation || reason.message || "Review this requirement."}`);

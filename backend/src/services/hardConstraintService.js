@@ -14,14 +14,6 @@ async function readPreferenceSnapshot(db, requestId, planId = null) {
     : await readPlanBlocks(db, planId);
 
   return { ...preferences, ...blocks };
-}async function readPreferenceSnapshot(db, requestId, planId = null) {
-  const preferences = await readPreferences(db, requestId);
-
-  const blocks = planId === null
-    ? await readBlocks(db, requestId)
-    : await readPlanBlocks(db, planId);
-
-  return { ...preferences, ...blocks };
 }
 
 function checkHardConstraints(indexes, preferences) {

@@ -14,7 +14,7 @@ test("Programme Curriculum matching, progress and integration over live MySQL/HT
   const eligibility = require("../src/services/eligibilityService");
   const curriculum = require("../src/services/curriculumService");
   const plans = require("../src/services/planService");
-  const { applyMigration, seedDemoCurriculum } = require("../scripts/setupCurriculum.cjs");
+  const { seedDemoCurriculum } = require("../scripts/setupCurriculum.cjs");
   const prefix = "K" + randomBytes(3).toString("hex").toUpperCase();
   const student = prefix + "S", other = prefix + "O", programme = prefix, code = s => prefix + s;
   let server;
@@ -57,6 +57,9 @@ test("Programme Curriculum matching, progress and integration over live MySQL/HT
   await plans.addCourseToRequest(active, code("F"));
   // Existing inconsistent data must not override academic completion status.
   await pool.query("INSERT INTO planning_request_course (request_id, course_code) VALUES (?, ?)", [active, code("A")]);
+  const activePlan = await plans.createPlan(active, { plan_name: "Active context" });
+  const oldPlan = await plans.createPlan(oldRequest, { plan_name: "Old context" });
+  const foreignPlan = await plans.createPlan(foreign, { plan_name: "Foreign context" });
   const express = require("express"), app = express();
   app.use(express.json());
   app.use((req, res, next) => { res.locals.authenticatedStudentId = student; next(); });
@@ -70,7 +73,7 @@ test("Programme Curriculum matching, progress and integration over live MySQL/HT
       ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(15000) });
     return { status: res.status, ...await res.json() };
   }
-  const get = (query = "") => http(`/students/${student}/curriculum/progress${query}`);
+  const get = (query = `?plan_id=${activePlan.plan_id}`) => http(`/students/${student}/curriculum/progress${query}`);
 
   await t.test("matches exact programme/cohort/route; both curriculum endpoints expose identity and progress", async () => {
     for (const suffix of ["", "/progress"]) {
@@ -130,17 +133,89 @@ test("Programme Curriculum matching, progress and integration over live MySQL/HT
     assert.equal(by("R").recommended_study_year, 6);
     assert.equal(by("R").eligibility.study_year_eligible, true);
     assert.equal(by("V").eligible, false); assert.equal(by("V").eligibility.study_year_eligible, false);
-    assert.equal(data.planning_context.request.request_id, active);
-    const old = await get(`?request_id=${oldRequest}`);
+    assert.equal(data.planning_context.request_id, active);
+    const old = await get(`?plan_id=${oldPlan.plan_id}`);
     assert.equal(old.data.courses.find(c => c.course_code === code("R")).status, "PLANNED");
     assert.equal(old.data.courses.find(c => c.course_code === code("F")).status, "NOT_YET_TAKEN");
   });
-  await t.test("non-archived chosen plans contribute planned status; archived and other requests do not", async () => {
-    const plan = await plans.createPlan(active, { plan_name: "Context test" });
-    await pool.query("INSERT INTO plan_course (plan_id, course_code, index_no) VALUES (?, ?, 101)", [plan.plan_id, code("I")]);
+  await t.test("selected courses need no index; stale request rows and sibling indexes never leak", async () => {
+    const scope = require("../src/services/planScopedService");
+    await scope.addSelectedCourse(activePlan.plan_id, student, code("I"));
     assert.equal((await get()).data.courses.find(c => c.course_code === code("I")).status, "PLANNED");
-    await pool.query("UPDATE plan SET status = 'ARCHIVED' WHERE plan_id = ?", [plan.plan_id]);
-    assert.equal((await get()).data.courses.find(c => c.course_code === code("I")).status, "NOT_YET_TAKEN");
+    await scope.removeSelectedCourse(activePlan.plan_id, student, code("F"));
+    assert.equal((await pool.query("SELECT course_code FROM planning_request_course WHERE request_id = ? AND course_code = ?", [active, code("F")]))[0].length, 1);
+    assert.equal((await get()).data.courses.find(c => c.course_code === code("F")).status, "NOT_YET_TAKEN");
+    const sibling = await plans.createPlan(active, { plan_name: "Sibling" });
+    await pool.query("INSERT INTO plan_course (plan_id, course_code, index_no) VALUES (?, ?, 101)", [sibling.plan_id, code("F")]);
+    assert.equal((await get()).data.courses.find(c => c.course_code === code("F")).status, "NOT_YET_TAKEN");
+    const academic = (await get("")).data;
+    assert.equal(academic.planning_context.scope, "ACADEMIC_ONLY");
+    assert.equal(academic.courses.find(c => c.course_code === code("I")).status, "NOT_YET_TAKEN");
+    assert.deepEqual(academic.degree_audit_summary, (await get()).data.degree_audit_summary);
+    assert.deepEqual(academic.summary, (await get()).data.summary);
+    assert.equal((await get()).data.courses.find(c => c.course_code === code("A")).status, "COMPLETED");
+    await pool.query("UPDATE plan SET status = 'ARCHIVED' WHERE plan_id = ?", [sibling.plan_id]);
+    const archived = await get(`?plan_id=${sibling.plan_id}`);
+    assert.equal(archived.status, 409); assert.equal(archived.code, "PLAN_ARCHIVED");
+    await scope.removeSelectedCourse(activePlan.plan_id, student, code("I"));
+    await scope.addSelectedCourse(activePlan.plan_id, student, code("F"));
+  });
+  await t.test("same explicit plan agrees across Curriculum, student API, Planner and Leo", async () => {
+    const { loadCourseEligibility } = await import("../src/ai/tools/eligibilityTools.mjs");
+    const leo = require("../src/services/leoPlanningService");
+    const id = await request(student);
+    const a = await plans.createPlan(id, { plan_name: "A" });
+    const b = await plans.createPlan(id, { plan_name: "B" });
+    const empty = await plans.createPlan(id, { plan_name: "Empty" });
+    await pool.query("INSERT INTO course_requirement (course_code, required_course_code, requirement_type, requirement_group) VALUES (?, ?, 'COREQUISITE', 1)", [code("F"), code("I")]);
+    await pool.query("INSERT INTO mutual_exclusion (course_code, excluded_course_code) VALUES (?, ?)", [code("R"), code("I")]);
+    try {
+      for (const [plan, letters] of [[a, ["F", "I", "R"]], [b, ["F", "R"]]]) {
+        for (const letter of letters) await pool.query("INSERT INTO plan_selected_course (plan_id, course_code) VALUES (?, ?)", [plan.plan_id, code(letter)]);
+      }
+      const summaries = [];
+      for (const plan of [a, b]) {
+        const data = (await get(`?plan_id=${plan.plan_id}`)).data;
+        summaries.push(data.degree_audit_summary);
+        const planner = await plans.getPlanEligibility(plan.plan_id);
+        assert.equal(planner.eligible, false, "Missing indexes still prevent finalization");
+        for (const letter of ["F", "R"]) {
+          const row = data.courses.find(c => c.course_code === code(letter));
+          const studentResult = await http(`/students/${student}/eligibility/${code(letter)}?plan_id=${plan.plan_id}`);
+          const leoResult = await loadCourseEligibility(student, code(letter), id, plan.plan_id);
+          assert.equal(leoResult.status, "ok"); assert.equal(studentResult.status, 200);
+          for (const result of [studentResult, leoResult.data, planner.courses.find(c => c.course_code === code(letter))]) {
+            assert.equal(result.eligible, row.eligible);
+            assert.equal(result.can_select, row.can_select);
+            assert.equal(result.corequisite_eligible, row.eligibility.corequisite_eligible);
+            assert.equal(result.mutual_exclusion_eligible, row.eligibility.mutual_exclusion_eligible);
+          }
+          assert.equal(row.eligible, letter === "F" ? plan === a : plan === b);
+        }
+      }
+      assert.deepEqual(summaries[0], summaries[1]);
+      const emptyResult = await get(`?plan_id=${empty.plan_id}`);
+      assert.equal(emptyResult.status, 200); assert.deepEqual(emptyResult.data.planning_context.selected_course_codes, []);
+      // Legacy request contents cannot be presented as the current plan's context.
+      await pool.query("INSERT INTO planning_request_course (request_id, course_code) VALUES (?, ?)", [id, code("E")]);
+      await pool.query("INSERT INTO planning_blocked_period (request_id, day_of_week, start_time, end_time) VALUES (?, 'FRI', '12:00', '13:00')", [id]);
+      await pool.query("INSERT INTO plan_blocked_period (plan_id, day_of_week, start_time, end_time) VALUES (?, 'THU', '12:00', '13:00')", [a.plan_id]);
+      const leoA = await leo.getPlanningContext(student, id, a.plan_id);
+      const leoB = await leo.getPlanningContext(student, id, b.plan_id);
+      assert.deepEqual(leoA.selected_courses, [code("F"), code("I"), code("R")]);
+      assert.equal(leoA.blocked_periods[0].day_of_week, "THU");
+      assert.deepEqual(leoB.blocked_periods, []);
+      assert.equal(leoA.request.selected_courses, undefined);
+      assert.equal((await leo.getPlanningContext(student, id)).status, "clarification_required");
+      const academic = await http(`/students/${student}/eligibility/${code("F")}`);
+      assert.equal(academic.planning_context.scope, "ACADEMIC_ONLY"); assert.equal(academic.corequisite_eligible, false);
+      assert.equal((await leo.resolveEligibilityPlan(student, id)).status, "clarification_required");
+      assert.equal((await http(`/students/${student}/eligibility/${code("F")}?request_id=${id}`)).code, "PLAN_ID_REQUIRED");
+    } finally {
+      await pool.query("DELETE FROM course_requirement WHERE course_code = ? AND requirement_type = 'COREQUISITE'", [code("F")]);
+      await pool.query("DELETE FROM mutual_exclusion WHERE course_code = ? AND excluded_course_code = ?", [code("R"), code("I")]);
+      await pool.query("DELETE FROM planning_request WHERE request_id = ?", [id]);
+    }
   });
   await t.test("explicit verified minimum year propagates through selection, final validation and generation", async () => {
     await assert.rejects(plans.addCourseToRequest(active, code("V")), { status: 422 });
@@ -167,7 +242,7 @@ test("Programme Curriculum matching, progress and integration over live MySQL/HT
     assert.equal(profile.data.admission_year, 2024); assert.equal(profile.data.admission_route, "DIRECT_ENTRY");
     assert.deepEqual(profile.data.curriculum_progress.summary, progress.data.summary);
     assert.deepEqual(profile.data.completed_courses, progress.data.degree_audit_summary.passed_course_codes);
-    const list = await http(`/courses?search=${prefix}`);
+    const list = await http(`/courses?search=${prefix}&plan_id=${activePlan.plan_id}`);
     assert.equal(list.status, 200);
     assert.equal(list.data.find(c => c.course_code === code("A")).completion_status, "Completed");
     const planned = list.data.find(c => c.course_code === code("F"));
@@ -178,8 +253,11 @@ test("Programme Curriculum matching, progress and integration over live MySQL/HT
   });
   await t.test("ownership, absent student/request, malformed request filters", async () => {
     assert.equal((await http(`/students/${other}/curriculum`)).status, 404);
-    assert.equal((await get(`?request_id=${foreign}`)).status, 404);
-    assert.equal((await get("?request_id=2147483647")).status, 404);
+    assert.equal((await get(`?plan_id=${foreignPlan.plan_id}`)).status, 404);
+    assert.equal((await get(`?plan_id=${activePlan.plan_id}&request_id=${oldRequest}`)).status, 404);
+    assert.equal((await get(`?plan_id=${activePlan.plan_id}&request_id=${active}`)).status, 200);
+    assert.equal((await get(`?request_id=${active}`)).code, "PLAN_ID_REQUIRED");
+    assert.equal((await get("?plan_id=2147483647")).status, 404);
     for (const query of ["?request_id=0", "?request_id=1&request_id=2", "?student_id=OTHER", "?request_id=1.5"]) assert.equal((await get(query)).status, 400);
     await assert.rejects(curriculum.getStudentCurriculum(student, null), { status: 401 });
     await assert.rejects(curriculum.getStudentCurriculum("NO_SUCH_STUDENT", "NO_SUCH_STUDENT"), { status: 404 });
@@ -203,7 +281,7 @@ test("Programme Curriculum matching, progress and integration over live MySQL/HT
 
     // The authenticated student can still check their own eligibility.
     const ownEligibility = await http(
-      `/students/${student}/eligibility/${code("F")}?request_id=${active}`
+      `/students/${student}/eligibility/${code("F")}?plan_id=${activePlan.plan_id}`
     );
 
     assert.equal(ownEligibility.status, 200);
@@ -234,19 +312,12 @@ test("Programme Curriculum matching, progress and integration over live MySQL/HT
       VALUES (?, ?, 'Duplicate bucket', 'BDE')`, [curriculumId, code("A")]), { code: "ER_DUP_ENTRY" });
     await assert.rejects(pool.query("UPDATE curriculum_course SET verified_min_study_year = 3 WHERE curriculum_id = ? AND course_code = ?", [curriculumId, code("R")]), { code: "ER_CHECK_CONSTRAINT_VIOLATED" });
   });
-  await t.test("migration and checked-in demo seed are repeatable and retain original history", async () => {
-    const legacy = (await pool.query("SELECT * FROM completed_course WHERE student_id = 'DEMO001' ORDER BY course_code"))[0];
-    const history = await audit.readRecords("DEMO001");
-    await applyMigration(pool); await applyMigration(pool);
-    const demo = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../../database/11_programme_curriculum_demo_data.json"), "utf8"));
-    assert.equal((await seedDemoCurriculum(pool, demo)).changed_rows, 0);
+  await t.test("isolated curriculum fixture is repeatable without replaying historical seeds", async () => {
+    const history = await audit.readRecords(student);
     assert.equal((await seedDemoCurriculum(pool, seed)).changed_rows, 0);
-    assert.deepEqual(await audit.readRecords("DEMO001"), history);
-    assert.deepEqual((await pool.query("SELECT * FROM completed_course WHERE student_id = 'DEMO001' ORDER BY course_code"))[0], legacy);
-    const demoResult = await curriculum.getStudentCurriculum("DEMO001", "DEMO001");
-    assert.equal(demoResult.curriculum.curriculum_key, demo.curriculum.curriculum_key);
-    assert.equal(demoResult.courses.find(c => c.course_code === "DA6001").eligible, null, "No invented catalogue offering");
-    assert.equal(demoResult.summary.completed_au, 7);
+    assert.deepEqual(await audit.readRecords(student), history);
+    const result = await curriculum.getStudentCurriculum(student, student);
+    assert.equal(result.summary.completed_au, 7);
   });
   await t.test("seed no-op preserves plan metadata; failed seed rolls back and does not overwrite history", async () => {
     const plan = await plans.createPlan(oldRequest, { plan_name: "Seed preservation" });

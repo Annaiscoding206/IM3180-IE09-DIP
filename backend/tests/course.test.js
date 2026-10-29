@@ -5,6 +5,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 function setup(query) {
   const sandbox = { module: { exports: {} }, console: { error() {} }, require(name) {
+    if (name === '../services/planningError') return require('../src/services/planningError');
     if (name === '../services/curriculumService') return require('../src/services/curriculumService');
     assert.equal(name, '../config/db'); return { query };
   }};

@@ -1,4 +1,4 @@
-import pool from "../../config/db.js";
+import planContextService from "../../services/planContextService.js";
 import { tool } from "@openai/agents";
 import { z } from "zod";
 import eligibilityService from "../../services/eligibilityService.js";
@@ -48,76 +48,70 @@ export async function loadCourseEligibility(
   try {
     // Only owned, explicit or uniquely confirmed plans can supply
     // concurrently selected courses; never read legacy request selections.
-    const planContext = await leo.resolveEligibilityPlan(studentId, requestId, planId);
-    if (planContext.status === "clarification_required") return planContext;
+    return await planContextService.contextSnapshot(async db => {
+      const planContext = await leo.resolveEligibilityPlan(studentId, requestId, planId, db);
+      if (planContext.status === "clarification_required") return planContext;
 
-const result = await eligibilityService.evaluateEligibility(
-  studentId,
-  code,
-  undefined,
-  planContext.status === "plan_context" ? planContext.request_id : null,
-  planContext.status === "plan_context" ? planContext.selected_course_codes : null
-);
+      const result = await eligibilityService.evaluateEligibility(
+        studentId,
+        code,
+        db,
+        planContext.request_id,
+        planContext.selected_course_codes
+      );
 
-// Retrieve the actual prerequisite and corequisite
-// definitions from the existing database.
-const [requirements] = await pool.query(
-  `
-  SELECT DISTINCT
-    requirement_type,
-    required_course_code,
-    requirement_group
-  FROM course_requirement
-  WHERE course_code = ?
-    AND requirement_type IN (
-      'PREREQUISITE',
-      'COREQUISITE'
-    )
-  ORDER BY
-    requirement_type,
-    requirement_group,
-    required_course_code
-  `,
-  [code]
-);
+      // Retrieve the actual prerequisite and corequisite
+      // definitions from the existing database.
+      const [requirements] = await db.query(
+        `
+        SELECT DISTINCT
+          requirement_type,
+          required_course_code,
+          requirement_group
+        FROM course_requirement
+        WHERE course_code = ?
+          AND requirement_type IN (
+            'PREREQUISITE',
+            'COREQUISITE'
+          )
+        ORDER BY
+          requirement_type,
+          requirement_group,
+          required_course_code
+        `,
+        [code]
+      );
 
-return {
-  status: "ok",
-  data: {
-    ...result,
-    planning_context: {
-      scope: planContext.status,
-      request_id: planContext.request_id,
-      plan_id: planContext.plan_id,
-      plan_name: planContext.plan_name ?? null,
-      selection_scope: planContext.selection_scope ?? null,
-      message: planContext.message ?? null
-    },
+      return {
+        status: "ok",
+        data: {
+          ...result,
+          planning_context: planContext,
 
-    recorded_course_requirements: {
-      prerequisites: requirements
-        .filter(
-          (row) =>
-            row.requirement_type === "PREREQUISITE"
-        )
-        .map((row) => ({
-          course_code: row.required_course_code,
-          requirement_group: row.requirement_group
-        })),
+          recorded_course_requirements: {
+            prerequisites: requirements
+              .filter(
+                (row) =>
+                  row.requirement_type === "PREREQUISITE"
+              )
+              .map((row) => ({
+                course_code: row.required_course_code,
+                requirement_group: row.requirement_group
+              })),
 
-      corequisites: requirements
-        .filter(
-          (row) =>
-            row.requirement_type === "COREQUISITE"
-        )
-        .map((row) => ({
-          course_code: row.required_course_code,
-          requirement_group: row.requirement_group
-        }))
-    }
-  }
-};
-
+            corequisites: requirements
+              .filter(
+                (row) =>
+                  row.requirement_type === "COREQUISITE"
+              )
+              .map((row) => ({
+                course_code: row.required_course_code,
+                requirement_group: row.requirement_group
+              }))
+          }
+        }
+      };
+    });
 
   } catch (error) {
     if (

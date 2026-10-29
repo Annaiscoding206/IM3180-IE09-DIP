@@ -54,7 +54,7 @@ test("Task 8: live academic-to-planning flows and deterministic Leo handoff", { 
   });
   await t.test("Flow 2: eligibility uses academic_record without legacy completion", async () => {
     assert.equal((await pool.query("SELECT * FROM completed_course WHERE student_id = ?", [student]))[0].length, 0);
-    const result = await http("GET", `/students/${student}/eligibility/${code("A")}?request_id=${request}`);
+    const result = await http("GET", `/students/${student}/eligibility/${code("A")}`);
     assert.equal(result.prerequisite_eligible, true, JSON.stringify(result));
     assert.equal((await http("POST", `/plans/${request}/courses`, { course_code: code("A") })).status, 201);
   });
@@ -93,12 +93,12 @@ test("Task 8: live academic-to-planning flows and deterministic Leo handoff", { 
   const context = { studentId: student, conversationId, message: "draft for my request" };
   const input = { ...empty(), day_preferences: [{ day_of_week: "MON", preference_type: "PREFER", constraint_level: "SOFT" }], clarification_questions: [], request_id: request, academic_year: null, semester: null};
   await t.test("Leo tools retrieve trusted academics, request, metrics, sessions and active selection", async () => {
-    for (const section of ["profile", "degree_audit", "curriculum"]) { const result = await invoke(tools.getAcademicContextTool, { section }, context); assert.notEqual(result.success, false); }
+    for (const section of ["profile", "degree_audit", "curriculum"]) { const result = await invoke(tools.getAcademicContextTool, { section, plan_id: null }, context); assert.notEqual(result.success, false); }
     assert.ok((await invoke(tools.listPlanningRequestsTool, {}, context)).some(r => r.request_id === request));
-    const data = await invoke(tools.getPlanningContextTool, { request_id: request }, context);
+    const data = await invoke(tools.getPlanningContextTool, { request_id: request, plan_id: null }, context);
     assert.equal(data.active.plan.plan_id, generated[0].plan_id); assert.equal(data.plans.length, 3); assert.equal(data.blocked_periods.length, 1);
     const timetable = await loadSelectedTimetable(student, null, null, request); assert.equal(timetable.status, "ok"); assert.equal(timetable.sessions.length, 2);
-    assert.equal((await invoke(tools.getPlanningContextTool, { request_id: request }, { ...context, studentId: other })).http_status, 404);
+    assert.equal((await invoke(tools.getPlanningContextTool, { request_id: request, plan_id: null }, { ...context, studentId: other })).http_status, 404);
   });
   await t.test("unresolved/UNSPECIFIED and casual acknowledgements never authorize writes", async () => {
     const before = await prefs.getPreferences(request, student);
@@ -123,7 +123,9 @@ test("Task 8: live academic-to-planning flows and deterministic Leo handoff", { 
     await conversation.setActiveConversationId({ studentId: student, conversationId });
     assert.equal(await conversation.getActiveConversationId({ studentId: student }), conversationId);
     const saved = await askSmartStars({ ...context, sourceChannel: "telegram", message: staged.preference_draft.confirmation_command + " AND GENERATE" }, { runAgent: () => { throw Error("Unexpected model call"); } });
-    assert.equal(saved.planning_result.saved_to_database, true, JSON.stringify(saved)); assert.equal(saved.planning_result.generation.timetable_generated, true); assert.equal(saved.planning_result.generation.plans.length, 3);
+    assert.equal(saved.planning_result.saved_to_database, true, JSON.stringify(saved)); assert.equal(saved.planning_result.generation.status, "clarification_required", "Preference changes invalidate confirmed-plan inference");
+    const explicit = await askSmartStars({ ...context, message: `GENERATE REQUEST ${request} FROM PLAN ${generated[0].plan_id}` });
+    assert.equal(explicit.planning_result.timetable_generated, true); assert.equal(explicit.planning_result.plans.length, 3);
     assert.equal((await prefs.getPreferences(request, student)).day_preferences[0].day_of_week, "MON");
     const history = await conversation.getConversationMessages({ studentId: student, conversationId, limit: 30 });
     assert.ok(history.some(m => m.source_channel === "website")); assert.ok(history.some(m => m.source_channel === "telegram"));
@@ -166,7 +168,7 @@ test("Task 8: live academic-to-planning flows and deterministic Leo handoff", { 
   });
   await t.test("Leo returns existing structured no-plan reasons and remedies", async () => {
     await prefs.replacePreferences(request, student, { ...empty(), day_preferences: [{ day_of_week: "SUN", preference_type: "PREFER", constraint_level: "HARD" }] });
-    const result = await askSmartStars({ ...context, message: `GENERATE REQUEST ${request}` });
+    const result = await askSmartStars({ ...context, message: `GENERATE REQUEST ${request} FROM PLAN ${generated[0].plan_id}` });
     assert.equal(result.planning_result.code, "NO_FEASIBLE_PLAN"); assert.equal(result.planning_result.success, false);
     assert.ok(result.planning_result.reasons.some(r => r.code === "HARD_DAY_CONSTRAINT")); assert.ok(result.planning_result.suggestions.length);
     assert.equal((await loadSelectedTimetable(student, null, null, request)).status, "no_selected_plan");
