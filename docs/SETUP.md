@@ -44,7 +44,8 @@ Extension inventory / setup order:
 | `05_course_types.sql` / `node scripts/applyCourseTypes.cjs` from backend | `course_type` plus idempotent catalogue type mappings |
 | `07_planning_blocked_period.sql` | `CREATE TABLE IF NOT EXISTS` day-specific blocks; no seed changes |
 | `node scripts/setupDegreeAudit.cjs --migration-only` from backend | Extension 08; preserves legacy completed rows as PASSED records with unknown historical fields left null; rerun imports only missing legacy keys |
-| `node scripts/setupDegreeAudit.cjs` | Also applies repeatable synthetic attempts from 09 JSON using the shared importer/invalidation service |
+| `node scripts/setupDegreeAudit.cjs` | Also applies explicit legacy earned-AU values and repeatable synthetic attempts from 09 JSON; attempts use the shared importer/invalidation service |
+| `node scripts/setupDegreeAudit.cjs --legacy-au-only` | Applies only the checked-in legacy AU enrichment: DEMO001 IE2108, IE2110 and MH1810 each earn 3 AU. Preserves PASSED status, unknown or known historical fields, and unrelated rows. Reruns are no-ops; conflicting known AU is rejected. Does not rerun migrations or other seeds. |
 | `node scripts/setupCurriculum.cjs --migration-only` | Extension 10: admission fields plus curriculum tables |
 | `node scripts/setupCurriculum.cjs` | Also applies synthetic 11 JSON, sets explicit demo admission data, refuses to overwrite conflicting existing seed/profile values |
 | `node scripts/setupLeo.cjs` | Inspects and creates only missing AI tables from 05 chat history, 06 active conversation and 12 preference draft; prints applied/existing tables |
