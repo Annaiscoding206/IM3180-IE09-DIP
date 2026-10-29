@@ -75,24 +75,49 @@ async function saveTelegramOffset(offset) {
 }
 
 // Telegram Bot API helper
+// Telegram API helper with retries for temporary network failures.
 async function telegramRequest(method, payload = {}) {
-  const response = await fetch(`${API}/${method}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(35000)
-  });
+  const MAX_ATTEMPTS = 3;
 
-  const result = await response.json();
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const response = await fetch(`${API}/${method}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(35000)
+      });
 
-  if (!response.ok || !result.ok) {
-    // Avoid printing token-bearing request URLs.
-    throw new Error(`Telegram ${method} request failed`);
+      const result = await response.json();
+
+      if (!response.ok || !result.ok) {
+        // Never expose token-bearing API URLs.
+        throw new Error(`Telegram ${method} request failed`);
+      }
+
+      return result.result;
+
+    } catch (error) {
+      // Retry only transient transport failures.
+      const temporaryFailure =
+        error instanceof TypeError ||
+        error.name === "TimeoutError" ||
+        error.name === "AbortError";
+
+      if (!temporaryFailure || attempt === MAX_ATTEMPTS) {
+        throw error;
+      }
+
+      console.warn(
+        `Temporary Telegram network error during ${method}. ` +
+        `Retrying (${attempt}/${MAX_ATTEMPTS - 1})...`
+      );
+
+      await sleep(1000 * attempt);
+    }
   }
-
-  return result.result;
 }
 
 // Send a text response to Telegram
@@ -102,7 +127,49 @@ async function sendMessage(chatId, text) {
     text
   });
 }
+// Send long AI responses without losing timetable information.
+async function sendLongMessage(chatId, text) {
+  const MAX_LENGTH = 3500;
 
+  let remaining =
+    String(text ?? "").trim() ||
+    "Sorry, Leo couldn't prepare a response.";
+
+  while (remaining.length > MAX_LENGTH) {
+    let cut = remaining.lastIndexOf("\n", MAX_LENGTH);
+
+    // Prefer splitting between words when no suitable newline exists.
+    if (cut < MAX_LENGTH / 2) {
+      cut = remaining.lastIndexOf(" ", MAX_LENGTH);
+    }
+
+    if (cut < MAX_LENGTH / 2) {
+      cut = MAX_LENGTH;
+    }
+
+    // Avoid splitting a Unicode surrogate pair.
+    const previousCharacter = remaining.charCodeAt(cut - 1);
+
+    if (
+      previousCharacter >= 0xD800 &&
+      previousCharacter <= 0xDBFF
+    ) {
+      cut--;
+    }
+
+    const part = remaining.slice(0, cut).trim();
+
+    if (part) {
+      await sendMessage(chatId, part);
+    }
+
+    remaining = remaining.slice(cut).trimStart();
+  }
+
+  if (remaining) {
+    await sendMessage(chatId, remaining);
+  }
+}
 // Handle incoming Telegram messages
 async function handleMessage(message) {
   if (!message || message.chat?.type !== "private") {
@@ -160,21 +227,61 @@ async function handleMessage(message) {
   if (text === "/start") {
     await sendMessage(
       chatId,
-      "Hi! I'm Leo, your Smart STARS AI Assistant! 🌟\n\n" +
-      "I can help you explore courses, understand academic " +
-      "requirements, and plan your semester."
+      "Hi! I'm Leo, your Smart STARS AI Assistant! 🦁\n\n" +
+      "I can help you:\n" +
+      "• Explore courses and academic requirements\n" +
+      "• Check your timetable\n" +
+      "• Manage scheduling preferences\n" +
+      "• Generate and regenerate timetable options\n" +
+      "• Compare different plans\n\n" +
+      (isApprovedUser
+        ? "You're connected to the Smart STARS demo.\n\n" +
+          "Send /help to see example questions."
+        : "This is a private demo. Send /whoami to " +
+          "check your Telegram account ID.")
     );
+
     return;
   }
 
   if (text === "/help") {
     await sendMessage(
       chatId,
-      "Smart STARS Assistant commands:\n\n" +
-      "/start - Welcome message\n" +
-      "/help - Show available commands\n\n" +
-      "AI course questions will be enabled in the next step."
+      "🦁 Leo Assistant — Help\n\n" +
+      "COMMANDS\n" +
+      "/start — Welcome message\n" +
+      "/help — Show this guide\n" +
+      "/whoami — Show your Telegram User ID\n\n" +
+      "EXAMPLE QUESTIONS\n\n" +
+      "📚 Courses\n" +
+      "What are the prerequisites for CS2024?\n\n" +
+      "📅 Timetable\n" +
+      "Show my timetable for this semester.\n\n" +
+      "⚙️ Preferences\n" +
+      "I prefer afternoon classes and want to avoid Fridays.\n\n" +
+      "🗓️ Generate plans\n" +
+      "Leo, generate timetable options for planning " +
+      "request 43 from Plan 180.\n\n" +
+      "🔄 Regenerate\n" +
+      "Leo, regenerate Plan C for planning request 43.\n\n" +
+      "📊 Compare plans\n" +
+      "Leo, compare Plans A, B, and C for " +
+      "planning request 43.\n\n" +
+      "Leo will not automatically finalize your plans."
     );
+
+    return;
+  }
+  // Only the approved Telegram account may use the demo AI.
+  if (!isApprovedUser) {
+    await sendMessage(
+    chatId,
+    `Your Telegram User ID is: ${telegramUserId}\n\n` +
+    (isApprovedUser
+      ? "Your account is approved for the Smart STARS demo."
+      : "Your account is not currently linked to the demo.")
+  );
+
     return;
   }
 
@@ -231,15 +338,8 @@ async function handleMessage(message) {
       console.log("Leo's active conversation saved in MySQL.");
     }
 
-    // 4. Send Leo's reply to Telegram.
-    const reply = result.reply.trim();
-
-    const safeReply =
-      reply.length > 4000
-        ? reply.slice(0, 3950) + "\n\n[Response shortened]"
-        : reply;
-
-    await sendMessage(chatId, safeReply);
+    // 4. Send the complete response, splitting long replies.
+    await sendLongMessage(chatId, result.reply);
 
     console.log("Leo sent an AI response to Telegram.");
 
