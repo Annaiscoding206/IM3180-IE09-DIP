@@ -445,10 +445,62 @@ export async function askSmartStars({ message, studentId = null, conversationId 
           /\b(?:planning\s+)?request(?:\s+id)?\s*#?\s*([1-9]\d*)\b/i
         )
       : null;
+
+  // Detect regeneration requests that also introduce new preferences.
+  const regenerationWithChangesMatch =
+    !/\b(?:do not|don't|never)\s+regenerate\b/i.test(cleaned) &&
+    /\b(?:fewer|less|avoid|prefer|earlier|later|minimi[sz]e)\b/i.test(cleaned)
+      ? cleaned.match(/\bregenerate\s+plan\s+([ABC])\b/i)
+      : null;
+  const recentChannelQuestion =
+    /\b(?:last|latest|most recent)\b/i.test(cleaned) &&
+    /\b(?:message|question|thing I said)\b/i.test(cleaned) &&
+    /\b(?:telegram|website)\b/i.test(cleaned)
+      ? /\btelegram\b/i.test(cleaned)
+        ? "telegram"
+        : "website"
+      : null;
+
   const command = leo.parsePlanningCommand(commandText);
   let reply, planningResult = null;
 
-  if (comparisonRequestMatch) {
+  if (recentChannelQuestion) {
+    if (!trusted) {
+      reply = "Please sign in to access your conversation history.";
+    } else {
+      const lastMessage = [...previous]
+        .reverse()
+        .find(
+          (item) =>
+            item.role === "user" &&
+            item.source_channel === recentChannelQuestion
+        );
+
+      reply = lastMessage
+        ? `Your most recent message from ${recentChannelQuestion} was: ` +
+          `"${lastMessage.content}"`
+        : `I couldn't find a recent message from ` +
+          `${recentChannelQuestion} in this conversation.`;
+    }
+
+  } else if (regenerationWithChangesMatch) {
+    const letter = regenerationWithChangesMatch[1].toUpperCase();
+
+    if (!trusted) {
+      reply = "Please sign in before updating scheduling preferences.";
+    } else {
+      reply =
+        `I can help regenerate Plan ${letter} with different ` +
+        "scheduling priorities.\n\n" +
+        "First, tell me which planning request to update " +
+        "and the preference you want to change.\n\n" +
+        "I'll prepare a preference draft for you to review. " +
+        "After you approve and save those preferences, " +
+        `you can ask me to regenerate Plan ${letter}.\n\n` +
+        "I haven't changed your preferences or timetable.";
+    }
+
+  } else if (comparisonRequestMatch) {
     const requestId = Number(comparisonRequestMatch[1]);
 
     if (!trusted) {
@@ -547,7 +599,29 @@ export async function askSmartStars({ message, studentId = null, conversationId 
     } catch (error) { planningResult = leo.failure(error); }
     reply = actionReply(planningResult);
   } else {
-    const input = previous.map(item => ({ role: item.role, content: [{ type: item.role === "assistant" ? "output_text" : "input_text", text: item.content }] }));
+    // Preserve the source of previous user messages.
+    const input = previous.map((item) => {
+      const channel =
+        item.source_channel === "telegram"
+          ? "Telegram"
+          : "Website";
+
+      return {
+        role: item.role,
+        content: [
+          {
+            type:
+              item.role === "assistant"
+                ? "output_text"
+                : "input_text",
+            text:
+              item.role === "user"
+                ? `[Message sent via ${channel}] ${item.content}`
+                : item.content
+          }
+        ]
+      };
+    });
     input.push({ role: "user", content: [{ type: "input_text", text: cleaned }] });
     const selectedAgent = isPreferenceEditMessage(cleaned)
       ? preferenceDraftAgent
