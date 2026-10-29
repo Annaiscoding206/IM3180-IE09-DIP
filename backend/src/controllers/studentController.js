@@ -1,3 +1,5 @@
+const { resolvePlanContext, contextSnapshot } = require("../services/planContextService");
+const { PlanningError } = require("../services/planningError");
 const { getCurriculumOverview } = require("../services/curriculumService");
 const pool = require("../config/db");
 const { evaluateEligibility, EligibilityNotFoundError } = require("../services/eligibilityService");
@@ -95,33 +97,15 @@ const getStudentById = async (req, res) => {
 const checkPrerequisiteEligibility = async (req, res) => {
   try {
     const { studentId, courseCode } = req.params;
-    const rawRequestId = req.query.request_id;
-let requestId = null;
-
-if (rawRequestId !== undefined) {
-  if (
-    typeof rawRequestId !== "string" ||
-    !/^[1-9]\d*$/.test(rawRequestId) ||
-    !Number.isSafeInteger(Number(rawRequestId)) ||
-    Number(rawRequestId) > 2147483647
-  ) {
-    return res.status(400).json({
-      success: false,
-      message: "request_id must be a positive integer",
+    const result = await contextSnapshot(async db => {
+      const context = await resolvePlanContext(res.locals.authenticatedStudentId, req.query, db);
+      const eligibility = await evaluateEligibility(studentId, courseCode, db,
+        context.request_id, context.selected_course_codes);
+      return { ...eligibility, planning_context: context };
     });
-  }
-
-  requestId = Number(rawRequestId);
-}
-
-const eligibility = await evaluateEligibility(
-  studentId,
-  courseCode,
-  pool,
-  requestId
-);
-    return res.status(200).json({ success: true, ...eligibility });
+    return res.status(200).json({ success: true, ...result });
   } catch (error) {
+    if (error instanceof PlanningError) return res.status(error.status).json({ success: false, message: error.message, ...error.details });
     if (error instanceof EligibilityNotFoundError) {
       return res.status(404).json({ success: false, message: error.message });
     }

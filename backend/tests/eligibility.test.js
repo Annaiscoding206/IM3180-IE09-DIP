@@ -182,7 +182,12 @@ function setup(change = () => {}) {
     "./hardConstraintService": require("../src/services/hardConstraintService"),
     "./planInvalidationService": require("../src/services/planInvalidationService"),
   });
+  const contextService = loadModule("backend/src/services/planContextService.js", {
+    "../config/db": db, "./planningError": require("../src/services/planningError"),
+  });
   const dependencies = {
+    "../services/planningError": require("../src/services/planningError"),
+    "../services/planContextService": { ...contextService, contextSnapshot: work => work(db) },
     "../config/db": db,
     "../services/eligibilityService": service,
     "../services/planService": planService,
@@ -201,6 +206,7 @@ function setup(change = () => {}) {
   async function invoke(handler, req) {
     const response = { statusCode: 200, body: null };
     await handler(req, {
+      locals: { authenticatedStudentId: req.params.studentId || "DEMO001" },
       status(code) { response.statusCode = code; return this; },
       json(body) { response.body = plain(body); return this; },
     });

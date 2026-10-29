@@ -219,7 +219,8 @@ test("Degree Audit authority, APIs and migration against MySQL/HTTP", { skip: pr
     const archiveBefore = await plans.getPlan(archived.plan_id);
     await pool.query("INSERT INTO completed_course (student_id, course_code) VALUES (?, ?), (?, ?)", [student, code("H"), student, code("C")]);
     const beforeLegacy = (await pool.query("SELECT * FROM completed_course ORDER BY student_id, course_code"))[0];
-    const sql = fs.readFileSync(path.resolve(__dirname, "../../database/08_degree_audit.sql"), "utf8").replace(/--[^\n]*/g, "");
+    const sql = fs.readFileSync(path.resolve(__dirname, "../../database/08_degree_audit.sql"), "utf8").replace(/--[^\n]*/g, "")
+      .replace("WHERE NOT EXISTS (", `WHERE cc.student_id = '${student}' AND NOT EXISTS (`);
     async function migrate() {
       const db = await pool.getConnection();
       try { for (const statement of sql.split(";").filter(s => s.trim())) await db.query(statement); }

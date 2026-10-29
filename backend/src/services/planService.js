@@ -425,14 +425,15 @@ async function removeIndex(planId, courseCode) {
 async function getPlanEligibility(planId, db = pool) {
   if (db === pool) return transaction(connection => getPlanEligibility(planId, connection));
   const plan = await getPlan(planId, db, true);
-  return evaluatePlanAcademics(plan, await readIndexes(plan.plan_id, db), db);
+  return evaluatePlanAcademics(plan, await readIndexes(plan.plan_id, db), db, null, true);
 }
 
 async function evaluatePlanAcademics(
   plan,
   indexes,
   db,
-  selectedCourseCodes = null
+  selectedCourseCodes = null,
+  includeSelected = false
 ) {
   const planCourseCodes = [
     ...new Set(
@@ -469,14 +470,14 @@ async function evaluatePlanAcademics(
 
   const courseResults = [];
 
-  for (const courseCode of planCourseCodes) {
+  for (const courseCode of (includeSelected ? requestedCodes : planCourseCodes)) {
     let result;
     try { result = await evaluateEligibility(
       plan.student_id,
       courseCode,
       db,
       plan.request_id,
-      planCourseCodes
+      [...requestedCodes]
     ); } catch (error) {
       if (!(error instanceof EligibilityNotFoundError)) throw error;
       result = { course_code: courseCode, eligible: false, can_select: false,

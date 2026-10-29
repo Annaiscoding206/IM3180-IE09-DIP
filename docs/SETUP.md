@@ -48,8 +48,11 @@ Extension inventory / setup order:
 | `node scripts/setupCurriculum.cjs --migration-only` | Extension 10: admission fields plus curriculum tables |
 | `node scripts/setupCurriculum.cjs` | Also applies synthetic 11 JSON, sets explicit demo admission data, refuses to overwrite conflicting existing seed/profile values |
 | `node scripts/setupLeo.cjs` | Inspects and creates only missing AI tables from 05 chat history, 06 active conversation and 12 preference draft; prints applied/existing tables |
+| `node scripts/setupIndependentPlans.cjs` | Creates only missing extension 13 plan selection/block tables; applies extension 14 backfill once, atomically with its migration marker |
 
 The two different files beginning `05_` are separate extensions. Never apply all numbered SQL files blindly. SQL files can be applied with the MySQL client's `SOURCE /absolute/path/to/file.sql`; the setup commands above use `backend/.env` instead. Use the Degree Audit/Curriculum setup scripts rather than translating JSON into ad hoc SQL.
+
+For an existing installation upgrading to independent plans, run only `cd backend && node scripts/setupIndependentPlans.cjs`. It serializes migration runs with a database advisory lock, checks missing tables and `14_independent_plans_initial_copy`, and skips a recorded backfill. Repeating it preserves subsequent independent course removals and block edits. It refuses unlogged independent-plan data rather than copying stale request selections over it; a recorded backfill with missing tables requires data recovery. Stop application writes during this one-time upgrade. Do not rerun base schema or historical seeds. The SQL 14 file itself intentionally rejects repeated execution; use the guarded runner for repeatable setup.
 
 `04_week8_demo_data.sql` is optional historical demo content. It is not a migration needed for Task 8 and should not be rerun just to enable Leo. `database/legacy` and `migrate_course_data.sql` are historical/import utilities, not part of this setup sequence.
 

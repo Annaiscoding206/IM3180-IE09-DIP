@@ -35,7 +35,8 @@ const json = (method, path, data) => request(path, {
   ...(data !== undefined ? { body: JSON.stringify(data) } : {}),
 });
 
-// Automatically remove a course and its indexes from all plans
+// Legacy bulk operation: removes request selection and indexes across plans.
+// Independent-plan UI must use removePlanSelectedCourse instead.
 const removeCourseEverywhere = async (requestId, code) => {
   const coursePath = `/plans/${requestId}/courses/${encodeURIComponent(code)}`;
 
@@ -71,20 +72,22 @@ const removeCourseEverywhere = async (requestId, code) => {
   }
 };
 
+const planQuery = planId => planId == null ? "" : `?plan_id=${encodeURIComponent(planId)}`;
+
 export const api = {
-  courses: () => request("/courses").then((body) => body.data),
-  course: (code) => request(`/courses/${encodeURIComponent(code)}`).then((body) => body.data),
+  courses: (planId) => request(`/courses${planQuery(planId)}`).then((body) => body.data),
+  course: (code, planId) => request(`/courses/${encodeURIComponent(code)}${planQuery(planId)}`).then((body) => body.data),
   timetable: (code, indexNo) => request(`/courses/${encodeURIComponent(code)}/indexes/${indexNo}/timetable`).then((body) => body.data),
   student: (studentId) => request(`/students/${encodeURIComponent(studentId)}`).then((body) => body.data),
-  eligibility: (studentId, code, requestId) => {
-    const query = requestId ? `?request_id=${requestId}` : "";
-    return request(`/students/${encodeURIComponent(studentId)}/eligibility/${encodeURIComponent(code)}${query}`);
-  },
+  curriculum: (studentId, planId) => request(`/students/${encodeURIComponent(studentId)}/curriculum${planQuery(planId)}`).then(body => body.data),
+  eligibility: (studentId, code, planId) =>
+    request(`/students/${encodeURIComponent(studentId)}/eligibility/${encodeURIComponent(code)}${planQuery(planId)}`),
   planningRequests: (studentId) => request(`/planning-requests?student_id=${encodeURIComponent(studentId)}`).then((body) => body.data),
   planningRequest: (requestId) => request(`/planning-requests/${requestId}`).then((body) => body.data),
 
   // New methods use the documented planning endpoints; a request ID is NOT a plan ID.
   createPlanningRequest: (data) => json("POST", "/planning-requests", data).then((body) => body.data),
+  // Legacy request/bulk selection APIs retained for compatibility only.
   selectedCourses: (requestId) => request(`/plans/${requestId}/courses`).then((body) => body.data),
   addSelectedCourse: (requestId, code) => json("POST", `/plans/${requestId}/courses`, { course_code: code }),
   removeSelectedCourse: (requestId, code) => json("DELETE", `/plans/${requestId}/courses/${encodeURIComponent(code)}`),
@@ -93,6 +96,7 @@ export const api = {
   createPlan: (requestId, name) => json("POST", `/planning-requests/${requestId}/plans`, { plan_name: name }).then((body) => body.data),
   preferences: (id) => request(`/planning-requests/${id}/preferences`).then(b => b.data),
   savePreferences: (id, data) => json("PUT", `/planning-requests/${id}/preferences`, data).then(b => b.data),
+  // Legacy request/bulk block APIs; use planBlocks/addPlanBlock for one plan.
   blocks: (id) => request(`/planning-requests/${id}/blocked-periods`).then(b => b.data.blocked_periods),
   addBlock: (id, data) => json("POST", `/planning-requests/${id}/blocked-periods`, data).then(b => b.data),
   removeBlock: (id, blockId) => json("DELETE", `/planning-requests/${id}/blocked-periods/${blockId}`),

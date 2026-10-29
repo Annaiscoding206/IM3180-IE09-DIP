@@ -1,4 +1,4 @@
-const pool = require("../config/db");
+const { resolvePlanContext, contextSnapshot: snapshot } = require("./planContextService");
 const { PlanningError } = require("./planningError");
 const { readRecords, passedCourseCredits, summarizeRecords } = require("./degreeAuditService");
 const { matchCurriculum } = require("./curriculumRulesService");
@@ -45,38 +45,19 @@ function calculateProgress(categories, groups, courses, records, plannedCodes = 
     unallocated_passed_course_codes: [...credits.keys()].filter(code => !courses.some(c => c.course_code === code)).sort() };
 }
 
-function requestFilter(query) {
-  if (!query || Object.keys(query).some(k => k !== "request_id")) throw new PlanningError(400, "Only request_id is accepted");
-  if (query.request_id === undefined) return null;
-  if (typeof query.request_id !== "string" || !/^[1-9]\d*$/.test(query.request_id) || Number(query.request_id) > 2147483647) {
-    throw new PlanningError(400, "request_id must be a positive integer");
-  }
-  return Number(query.request_id);
-}
-
-async function loadContext(studentId, requestId, db) {
+async function loadContext(studentId, query, db) {
+  const planningContext = await resolvePlanContext(studentId, query, db);
   const [students] = await db.query(`SELECT student_id, programme, study_year, admission_year, admission_route
     FROM student WHERE student_id = ?`, [studentId]);
   if (!students.length) throw new PlanningError(404, "Student not found", { code: "STUDENT_NOT_FOUND" });
   const student = students[0];
-  const [requests] = await db.query(`SELECT request_id, academic_year, semester FROM planning_request WHERE student_id = ?
-    ${requestId == null ? "ORDER BY created_at DESC, request_id DESC LIMIT 1" : "AND request_id = ?"}`,
-  requestId == null ? [studentId] : [studentId, requestId]);
-  if (requestId != null && !requests.length) throw new PlanningError(404, "Planning request not found for this student");
-  const request = requests[0] || null;
-  let planned = [];
-  if (request) {
-    const [rows] = await db.query(`SELECT course_code FROM planning_request_course WHERE request_id = ?
-      UNION SELECT pc.course_code FROM plan_course pc JOIN plan p ON p.plan_id = pc.plan_id
-      WHERE p.request_id = ? AND p.status <> 'ARCHIVED' ORDER BY course_code`, [request.request_id, request.request_id]);
-    planned = rows.map(r => r.course_code);
-  }
+  const planned = planningContext.selected_course_codes;
   const records = await readRecords(studentId, db);
   let curriculum = null, matchError = null;
   try { curriculum = await matchCurriculum(student, db); }
   catch (error) { if (error.details?.code !== "AMBIGUOUS_CURRICULUM") throw error; matchError = error; }
   if (!curriculum && !matchError) matchError = new PlanningError(404, "No curriculum matches the explicit programme, admission year and route", { code: "NO_CURRICULUM" });
-  return { student, request, records, planned, curriculum, matchError };
+  return { student, planningContext, records, planned, curriculum, matchError };
 }
 
 async function readDefinition(curriculumId, db) {
@@ -88,26 +69,14 @@ async function readDefinition(curriculumId, db) {
   return { categories, groups, courses };
 }
 
-async function snapshot(work) {
-  const db = await pool.getConnection();
-  try {
-    await db.query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ");
-    await db.beginTransaction();
-    const result = await work(db);
-    await db.commit();
-    return result;
-  } catch (error) { await db.rollback(); throw error; }
-  finally { db.release(); }
-}
-
 async function responseFromContext(context, db, includeEligibility) {
-  const { student, request, records, planned, curriculum, matchError } = context;
+  const { student, planningContext, records, planned, curriculum, matchError } = context;
   if (matchError) throw matchError;
   const definition = await readDefinition(curriculum.curriculum_id, db);
   const progress = calculateProgress(definition.categories, definition.groups, definition.courses, records, planned);
   if (includeEligibility) for (const course of progress.courses) {
     try {
-      course.eligibility = await evaluateEligibility(student.student_id, course.course_code, db, request?.request_id ?? null);
+      course.eligibility = await evaluateEligibility(student.student_id, course.course_code, db, planningContext.request_id, planned);
       course.eligible = course.eligibility.eligible;
       course.can_select = course.eligibility.can_select;
     } catch (error) {
@@ -119,8 +88,7 @@ async function responseFromContext(context, db, includeEligibility) {
   }
   return { student_id: student.student_id, matching: { programme: student.programme,
     admission_year: student.admission_year, admission_route: student.admission_route }, curriculum,
-    planning_context: { selection: "selected courses and non-archived plan courses", request,
-      default_scope: "latest_created_request" }, recommendations_are_advisory: true,
+    planning_context: planningContext, recommendations_are_advisory: true,
     credit_allocation: "one_course_one_bucket; categories roll up their groups; known passed AU only",
     ...progress, degree_audit_summary: summarizeRecords(records) };
 }
@@ -128,24 +96,23 @@ async function responseFromContext(context, db, includeEligibility) {
 async function getStudentCurriculum(studentId, trustedId, query = {}) {
   if (typeof trustedId !== "string" || !trustedId.trim()) throw new PlanningError(401, "Student identity required");
   if (typeof studentId !== "string" || studentId.toUpperCase() !== trustedId.toUpperCase()) throw new PlanningError(404, "Student not found for this identity");
-  const requestId = requestFilter(query);
-  return snapshot(async db => responseFromContext(await loadContext(studentId, requestId, db), db, true));
+  return snapshot(async db => responseFromContext(await loadContext(studentId, query, db), db, true));
 }
 
 // Additive integration for existing profile/catalogue responses. An unmatched or
 // ambiguous curriculum is explicit without hiding existing profile/course data.
 async function getCurriculumOverview(studentId) {
   return snapshot(async db => {
-    const context = await loadContext(studentId, null, db);
+    const context = await loadContext(studentId, {}, db);
     if (context.matchError) return { code: context.matchError.details.code, message: context.matchError.message };
     const response = await responseFromContext(context, db, false);
     return { curriculum: response.curriculum, summary: response.summary, categories: response.categories,
       planning_context: response.planning_context };
   });
 }
-async function getCourseAnnotations(studentId) {
+async function getCourseAnnotations(studentId, query = {}) {
   return snapshot(async db => {
-    const context = await loadContext(studentId, null, db);
+    const context = await loadContext(studentId, query, db);
     const passed = passedCourseCredits(context.records), planned = new Set(context.planned);
     const definition = context.curriculum ? await readDefinition(context.curriculum.curriculum_id, db) : { courses: [] };
     const courses = new Map(definition.courses.map(c => [c.course_code, c]));
@@ -154,7 +121,7 @@ async function getCourseAnnotations(studentId) {
       return { ...course, is_completed: passed.has(code), completion_status: passed.has(code) ? "Completed" : "Not completed",
         curriculum_status: courseStatus(code, passed, planned), curriculum_category: requirement?.category_code ?? null,
         curriculum_group: requirement?.group_code ?? null, curriculum_match: context.matchError?.details.code ?? "MATCHED",
-        planning_request_id: context.request?.request_id ?? null };
+        planning_request_id: context.planningContext.request_id, planning_context: context.planningContext };
     };
   });
 }

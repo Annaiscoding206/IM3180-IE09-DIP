@@ -1,3 +1,4 @@
+const { resolvePlanContext, contextId } = require("./planContextService");
 const { randomUUID } = require("node:crypto");
 const pool = require("../config/db");
 const plans = require("./planService");
@@ -81,79 +82,51 @@ async function generateForStudent(context, requestId, sourcePlanId = null) {
     const draft = await readDraft(context);
     if (!draft || draft.draft_id !== command.draft_id || draft.request_id !== command.request_id || draft.status !== "saved") throw new plans.PlanningError(409, "Confirm and save the draft before generation");
   }
-  const result = await generatePlans(requestId, context.studentId, sourcePlanId === null ? {} : { source_plan_id: sourcePlanId });
+  const planningContext = await resolveEligibilityPlan(context.studentId, requestId, sourcePlanId);
+  if (planningContext.status === 'clarification_required') return planningContext;
+  const result = await generatePlans(requestId, context.studentId, { source_plan_id: planningContext.plan_id });
   const detailed = [];
   for (const plan of result.plans) detailed.push(await summaries.getPlanSummary(plan.plan_id, context.studentId));
   return { ...result, plans: detailed, status: "generated", timetable_generated: true };
 }
-async function getPlanningContext(studentId, requestId) {
-  await summaries.requireOwnedRequest(requestId, studentId);
-  return { request: await plans.getRequest(requestId), preferences: await preferences.getPreferences(requestId, studentId),
-    blocked_periods: (await preferences.getBlocks(requestId, studentId)).blocked_periods,
+async function getPlanningContext(studentId, requestId, planId = null) {
+  const planningContext = await resolveEligibilityPlan(studentId, requestId, planId);
+  if (planningContext.status === 'clarification_required') return planningContext;
+  const plan = await summaries.getPlanSummary(planningContext.plan_id, studentId);
+  return { request: await summaries.requireOwnedRequest(requestId, studentId),
+    planning_context: planningContext, selected_courses: planningContext.selected_course_codes,
+    preferences: await preferences.getPreferences(requestId, studentId),
+    blocked_periods: plan.blocked_periods,
     plans: await summaries.getRequestPlanSummaries(requestId, studentId), active: await summaries.getActivePlan(requestId, studentId) };
 }
 
-// Resolve eligibility against an owned plan, never against the legacy
-// planning_request_course selection. An omitted plan is only inferred when
-// exactly one final plan is selected for the student (or supplied request).
-async function resolveEligibilityPlan(studentId, requestId = null, planId = null) {
+// Leo resolves conversational ambiguity, then delegates all explicit ownership
+// and selection loading to the shared backend resolver.
+async function resolveEligibilityPlan(studentId, requestId = null, planId = null, db = pool) {
+  if (planId !== null) return resolvePlanContext(studentId, {
+    plan_id: planId, ...(requestId === null ? {} : { request_id: requestId }),
+  }, db);
   if (!studentId) throw new plans.PlanningError(401, "Student identity required");
-  if (requestId !== null) plans.integer(requestId, "requestId");
-  if (planId !== null) plans.integer(planId, "planId");
-  if (requestId !== null) await summaries.requireOwnedRequest(requestId, studentId);
-
-  let selectedPlan = null;
-  if (planId !== null) {
-    const [rows] = await pool.query(
-      `SELECT p.plan_id, p.request_id, p.plan_name, p.status
-       FROM plan p
-       JOIN planning_request pr ON pr.request_id = p.request_id
-       WHERE p.plan_id = ? AND pr.student_id = ?`,
-      [planId, studentId]
-    );
-    if (!rows.length || (requestId !== null && Number(rows[0].request_id) !== Number(requestId))) {
-      throw new plans.PlanningError(404, "Plan not found for this student and request");
+  const requests = requestId === null
+    ? await plans.listRequests(studentId)
+    : [await summaries.requireOwnedRequest(contextId(requestId, "request_id"), studentId)];
+  const choices = [];
+  for (const request of requests) {
+    let active;
+    try { active = await summaries.getActivePlan(request.request_id, studentId); }
+    catch (error) {
+      if (error.details?.code !== 'AMBIGUOUS_SELECTION') throw error;
+      return { status: 'clarification_required', request_id: request.request_id,
+        message: 'More than one confirmed plan exists. Specify the plan to evaluate.' };
     }
-    if (rows[0].status === "ARCHIVED") {
-      throw new plans.PlanningError(409, "Archived plans are not current planning context");
-    }
-    selectedPlan = rows[0];
-  } else {
-    let requests;
-    if (requestId !== null) {
-      requests = [{ request_id: requestId }];
-    } else {
-      [requests] = await pool.query("SELECT request_id FROM planning_request WHERE student_id = ?", [studentId]);
-    }
-    const choices = [];
-    for (const request of requests) {
-      const active = await summaries.getActivePlan(request.request_id, studentId);
-      if (active?.plan?.plan_id) choices.push({
-        plan_id: active.plan.plan_id,
-        request_id: request.request_id,
-        plan_name: active.plan.plan_name,
-        status: "SELECTED",
-      });
-    }
-    if (choices.length > 1) {
-      return { status: "clarification_required", message: "More than one selected timetable exists. Specify which plan to evaluate.", available_plans: choices };
-    }
-    selectedPlan = choices[0] ?? null;
+    if (active?.plan?.plan_id) choices.push(active.plan);
   }
-
-  if (!selectedPlan) {
-    return { status: "completed_courses_only", request_id: requestId, plan_id: null,
-      selected_course_codes: [], message: "No unambiguous selected plan was found; concurrent plan courses were not considered." };
-  }
-  const [courses] = await pool.query(
-    "SELECT course_code FROM plan_selected_course WHERE plan_id = ? ORDER BY course_code",
-    [selectedPlan.plan_id]
-  );
-  return { status: "plan_context", plan_id: selectedPlan.plan_id,
-    plan_name: selectedPlan.plan_name, request_id: selectedPlan.request_id,
-    plan_status: selectedPlan.status ?? null,
-    selection_scope: planId !== null ? "explicit_plan" : "confirmed_plan",
-    selected_course_codes: courses.map(row => row.course_code) };
+  if (choices.length !== 1) return {
+    status: "clarification_required",
+    message: "Specify the plan to evaluate; no unique confirmed plan is available.",
+    available_plans: choices.map(p => ({ plan_id: p.plan_id, request_id: p.request_id, plan_name: p.plan_name })),
+  };
+  return resolvePlanContext(studentId, { plan_id: choices[0].plan_id }, db);
 }
 
 function failure(error) {

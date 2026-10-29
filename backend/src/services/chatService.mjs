@@ -18,6 +18,8 @@ function actionReply(result) {
       lines.push(`Validation: ${plan.validation.can_finalize ? "ready to finalize" : "requires review"}.`);
       for (const slot of plan.sessions) lines.push(`  ${slot.course_code}/${slot.index_no} ${slot.class_type}: ${slot.day_of_week} ${slot.start_time}–${slot.end_time}, weeks ${slot.teaching_weeks ?? "unspecified"}${slot.venue ? `, ${slot.venue}` : ""}.`);
     }
+  } else if (generation.status === "clarification_required") {
+    lines.push(generation.message);
   } else if (generation.status === "rejected") {
     lines.push(generation.message);
     for (const reason of generation.reasons || []) lines.push(`${reason.code}: ${reason.explanation || reason.message || "Review this requirement."}`);

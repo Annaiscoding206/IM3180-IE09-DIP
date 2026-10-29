@@ -1,9 +1,12 @@
+const { PlanningError } = require("../services/planningError");
 const pool = require("../config/db");
 const { getCourseAnnotations } = require("../services/curriculumService");
 
-async function completionAnnotation(res) {
+async function completionAnnotation(req, res) {
   const student = res.locals?.authenticatedStudentId;
-  return student ? getCourseAnnotations(student) : course => course;
+  const query = Object.fromEntries(['plan_id', 'request_id'].filter(k => req.query[k] !== undefined).map(k => [k, req.query[k]]));
+  if (!student && Object.keys(query).length) throw new PlanningError(401, 'Student identity required');
+  return student ? getCourseAnnotations(student, query) : course => course;
 }
 
 class CourseInputError extends Error {}
@@ -124,7 +127,7 @@ if (conditions.length > 0) {
     sql += ` ORDER BY course_code`;
 
     const [courses] = await pool.query(sql, params);
-    const annotate = await completionAnnotation(res);
+    const annotate = await completionAnnotation(req, res);
 
     res.status(200).json({
       success: true,
@@ -132,6 +135,7 @@ if (conditions.length > 0) {
       data: courses.map(withCourseTypes).map(annotate),
     });
   } catch (error) {
+    if (error instanceof PlanningError) return res.status(error.status).json({ success: false, message: error.message, ...error.details });
     if (error instanceof CourseInputError) {
       return res.status(400).json({ success: false, message: error.message });
     }
@@ -199,7 +203,7 @@ const getCourseByCode = async (req, res) => {
     [courseCode]
     );
 
-    const annotate = await completionAnnotation(res);
+    const annotate = await completionAnnotation(req, res);
     res.status(200).json({
       success: true,
       data: {
@@ -208,6 +212,7 @@ const getCourseByCode = async (req, res) => {
       }
     });
   } catch (error) {
+    if (error instanceof PlanningError) return res.status(error.status).json({ success: false, message: error.message, ...error.details });
     if (error instanceof CourseInputError) {
       return res.status(400).json({ success: false, message: error.message });
     }
@@ -264,6 +269,7 @@ const getCourseIndexes = async (req, res) => {
       data: indexes,
     });
   } catch (error) {
+    if (error instanceof PlanningError) return res.status(error.status).json({ success: false, message: error.message, ...error.details });
     if (error instanceof CourseInputError) {
       return res.status(400).json({ success: false, message: error.message });
     }
@@ -321,6 +327,7 @@ const getIndexTimetable = async (req, res) => {
 
 
     } catch (error) {
+    if (error instanceof PlanningError) return res.status(error.status).json({ success: false, message: error.message, ...error.details });
     if (error instanceof CourseInputError) {
       return res.status(400).json({ success: false, message: error.message });
     }
