@@ -91,7 +91,7 @@ test("Task 8: live academic-to-planning flows and deterministic Leo handoff", { 
   const invoke = async (tool, input, context) => JSON.parse(await tool.invoke(new RunContext(context), JSON.stringify(input)));
   const conversationId = (await conversation.createConversation({ studentId: student, title: "Task 8" })).conversation_id;
   const context = { studentId: student, conversationId, message: "draft for my request" };
-  const input = { ...empty(), day_preferences: [{ day_of_week: "MON", preference_type: "PREFER", constraint_level: "SOFT" }], clarification_questions: [], request_id: request };
+  const input = { ...empty(), day_preferences: [{ day_of_week: "MON", preference_type: "PREFER", constraint_level: "SOFT" }], clarification_questions: [], request_id: request, academic_year: null, semester: null};
   await t.test("Leo tools retrieve trusted academics, request, metrics, sessions and active selection", async () => {
     for (const section of ["profile", "degree_audit", "curriculum"]) { const result = await invoke(tools.getAcademicContextTool, { section }, context); assert.notEqual(result.success, false); }
     assert.ok((await invoke(tools.listPlanningRequestsTool, {}, context)).some(r => r.request_id === request));
@@ -115,7 +115,11 @@ test("Task 8: live academic-to-planning flows and deterministic Leo handoff", { 
     const staged = await askSmartStars({ ...context, message: "Prefer Monday softly" }, { runAgent: async (_, __, options) => {
       await invoke(interpretTimetablePreferencesTool, input, options.context); return { finalOutput: "Do not use model prose instead of exact draft" };
     } });
-    assert.match(staged.reply, /SOFT PREFER: MON/); assert.ok(staged.preference_draft.confirmation_command);
+    assert.match(
+      staged.reply,
+      /Prefer classes on Monday \(flexible preference\)/
+    );
+    assert.ok(staged.preference_draft.confirmation_command);
     await conversation.setActiveConversationId({ studentId: student, conversationId });
     assert.equal(await conversation.getActiveConversationId({ studentId: student }), conversationId);
     const saved = await askSmartStars({ ...context, sourceChannel: "telegram", message: staged.preference_draft.confirmation_command + " AND GENERATE" }, { runAgent: () => { throw Error("Unexpected model call"); } });
@@ -139,7 +143,13 @@ test("Task 8: live academic-to-planning flows and deterministic Leo handoff", { 
     const saved = await http("POST", "/chat", { message: draft.confirmation_command, conversationId });
     assert.equal(saved.status, 200); assert.equal(saved.planning_result.saved_to_database, true);
     draft = await invoke(interpretTimetablePreferencesTool, input, context);
-    await invoke(interpretTimetablePreferencesTool, { ...empty(), clarification_questions: [], request_id: request }, context);
+    await invoke(interpretTimetablePreferencesTool, {
+      ...empty(),
+      clarification_questions: [],
+      request_id: request,
+      academic_year: null,
+      semester: null
+    }, context);
     assert.equal(await leo.readDraft(context), null);
     const rejected = await http("POST", "/chat", { message: draft.confirmation_command, conversationId });
     assert.equal(rejected.planning_result.code, "STALE_DRAFT");
