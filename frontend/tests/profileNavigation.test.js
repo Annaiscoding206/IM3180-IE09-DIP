@@ -5,81 +5,436 @@ import { JSDOM } from 'jsdom';
 import { compileModule } from './renderModule.js';
 
 let loadApp, dom, appRoot;
-before(async () => { loadApp = await compileModule('main.jsx'); });
+
+before(async () => {
+  loadApp = await compileModule('main.jsx');
+});
+
 beforeEach(() => {
-  dom = new JSDOM('<div id="root"></div>', { url: 'http://localhost:5173' });
+  dom = new JSDOM('<div id="root"></div>', {
+    url: 'http://localhost:5173',
+  });
+
   globalThis.window = dom.window;
   globalThis.document = dom.window.document;
   globalThis.sessionStorage = dom.window.sessionStorage;
   globalThis.localStorage = dom.window.localStorage;
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 });
-afterEach(async () => { if (appRoot) await act(async () => appRoot.unmount()); appRoot = null; dom.window.close(); });
-const flush = () => act(async () => { await new Promise(resolve => setImmediate(resolve)); });
+
+afterEach(async () => {
+  if (appRoot) {
+    await act(async () => appRoot.unmount());
+  }
+
+  appRoot = null;
+  dom.window.close();
+});
+
+const flush = () =>
+  act(async () => {
+    await new Promise(resolve => setImmediate(resolve));
+  });
+
 const mount = async () => {
-  await act(async () => { appRoot = (await loadApp()).appRoot; });
+  await act(async () => {
+    appRoot = (await loadApp()).appRoot;
+  });
+
   await flush();
 };
-const nav = label => [...document.querySelectorAll('nav button')].find(button => button.textContent.includes(label));
-const click = async button => { await act(async () => button.click()); await flush(); };
+
+const nav = label =>
+  [...document.querySelectorAll('nav button')].find(button =>
+    button.textContent.includes(label)
+  );
+
+const click = async button => {
+  await act(async () => button.click());
+  await flush();
+};
+
 const waitFor = async selector => {
   for (let i = 0; i < 40; i++) {
     if (document.querySelector(selector)) return;
     await flush();
   }
+
   assert.fail(`Did not render ${selector}: ${document.body.textContent}`);
 };
 
+// Wait for actual curriculum content instead of the removed Working Plan panel.
+const curriculumHeading =
+  '[aria-labelledby="profile-curriculum-title"] h3';
+
 function fixtureApi(t, { noPlan = false, requestWithoutPlan = false, failInitialContext = false, courses = [] } = {}) {
-  const calls = [], unexpected = [];
+  const calls = [];
+  const unexpected = [];
+
   let fail = failInitialContext;
-  const request = { request_id: 10, academic_year: '2026-2027', semester: 1, target_au: 15 };
-  const plan = { plan_id: 7, plan_name: 'My working plan', status: 'GENERATED' };
+
+  const request = {
+    request_id: 10,
+    academic_year: '2026-2027',
+    semester: 1,
+    target_au: 15,
+  };
+
+  const plan = {
+    plan_id: 7,
+    plan_name: 'My working plan',
+    status: 'GENERATED',
+  };
+
   t.mock.method(globalThis, 'fetch', async path => {
     calls.push(path);
+
     const url = new URL(path, 'http://localhost');
     let data;
-    if (url.pathname === '/api/students/DEMO001') data = { student_id: 'DEMO001', student_name: 'Sam Tan', programme: 'CE', study_year: 2, completed_courses: [] };
-    else if (url.pathname === '/api/courses') data = courses;
-    else if (url.pathname.startsWith('/api/courses/')) data = { ...courses.find(c => c.course_code === url.pathname.split('/')[3]), indexes: [] };
-    else if (url.pathname.includes('/eligibility/')) return Response.json({ success: true, eligible: !url.pathname.endsWith('/COREQ'), can_select: true, message: 'Backend academic result' });
-    else if (url.pathname === '/api/planning-requests') {
-      if (fail) return Response.json({ success: false, message: 'Planning requests unavailable' }, { status: 500 });
+
+    if (url.pathname === '/api/students/DEMO001') {
+      data = {
+        student_id: 'DEMO001',
+        student_name: 'Sam Tan',
+        programme: 'CE',
+        study_year: 2,
+        completed_courses: [],
+      };
+    } else if (url.pathname === '/api/courses') {
+      data = courses;
+    } else if (url.pathname.startsWith('/api/courses/')) {
+      data = { ...courses.find(c => c.course_code === url.pathname.split('/')[3]), indexes: [] };
+    } else if (url.pathname.includes('/eligibility/')) {
+      return Response.json({ success: true, eligible: !url.pathname.endsWith('/COREQ'), can_select: true, message: 'Backend academic result' });
+    } else if (url.pathname === '/api/planning-requests') {
+      if (fail) {
+        return Response.json(
+          {
+            success: false,
+            message: 'Planning requests unavailable',
+          },
+          { status: 500 }
+        );
+      }
+
       data = noPlan ? [] : [request];
-    } else if (url.pathname === '/api/planning-requests/10') data = request;
-    else if (url.pathname === '/api/planning-requests/10/plans') data = requestWithoutPlan ? [] : [plan];
-    else if (url.pathname === '/api/planning-requests/10/active-plan') data = { plan: null };
-    else if (url.pathname === '/api/plans/7/selected-courses') data = [];
-    else if (url.pathname.endsWith('/degree-audit')) data = { records: [], summary: { passed_course_count: 0, earned_au: 0, earned_au_complete: true } };
-    else if (url.pathname.includes('/curriculum')) data = {
-      curriculum: { title: 'Current curriculum' }, categories: [], courses: [],
-      planning_context: url.searchParams.has('plan_id') ? { scope: 'EXPLICIT_PLAN', plan_id: Number(url.searchParams.get('plan_id')), plan_name: plan.plan_name, request_id: 10 }
-        : { scope: 'ACADEMIC_ONLY' },
-    };
-    else { unexpected.push(path); return Response.json({ success: false, message: 'Unexpected test request' }, { status: 500 }); }
-    return Response.json({ success: true, data });
+    } else if (url.pathname === '/api/planning-requests/10') {
+      data = request;
+    } else if (url.pathname === '/api/planning-requests/10/plans') {
+      data = requestWithoutPlan ? [] : [plan];
+    } else if (url.pathname === '/api/planning-requests/10/active-plan') {
+      data = { plan: null };
+    } else if (url.pathname === '/api/plans/7/selected-courses') {
+      data = [];
+    } else if (url.pathname.endsWith('/degree-audit')) {
+      data = {
+        records: [],
+        summary: {
+          passed_course_count: 0,
+          earned_au: 0,
+          earned_au_complete: true,
+        },
+      };
+    } else if (url.pathname.includes('/curriculum')) {
+      data = {
+        curriculum: {
+          title: 'Current curriculum',
+        },
+        categories: [],
+        courses: [],
+        planning_context: url.searchParams.has('plan_id')
+          ? {
+              scope: 'EXPLICIT_PLAN',
+              plan_id: Number(url.searchParams.get('plan_id')),
+              plan_name: plan.plan_name,
+              request_id: 10,
+            }
+          : {
+              scope: 'ACADEMIC_ONLY',
+            },
+      };
+    } else {
+      unexpected.push(path);
+
+      return Response.json(
+        {
+          success: false,
+          message: 'Unexpected test request',
+        },
+        { status: 500 }
+      );
+    }
+
+    return Response.json({
+      success: true,
+      data,
+    });
   });
-  return { calls, unexpected, recover() { fail = false; } };
+
+  return {
+    calls,
+    unexpected,
+    recover() {
+      fail = false;
+    },
+  };
 }
 
-test('sidebar and Explorer shortcut open Profile, retain working-plan context, breadcrumb and Leo', async t => {
-  const api = fixtureApi(t); await mount();
-  assert.equal(document.querySelector('h1').textContent, 'Course Explorer');
-  await click(nav('Student profile'));
-  await waitFor('.profile-context');
-  assert.equal(document.querySelector('h1').textContent, 'Student Profile');
-  assert.equal(nav('Student profile').getAttribute('aria-current'), 'page');
-  assert.equal(document.querySelector('.topbar strong').textContent, 'Student profile');
-  assert.match(document.querySelector('.profile-context').textContent, /My working plan · Plan 7/);
-  assert.ok(document.querySelector('[aria-label="Open Leo Assistant"]'));
-  assert.ok(nav('My planner'));
-  await click(nav('Course explorer'));
-  await click(document.querySelector('.degree-audit'));
-  assert.equal(document.querySelector('h1').textContent, 'Student Profile');
-  assert.ok(api.calls.includes('/api/students/DEMO001/curriculum/progress?plan_id=7'));
-  assert.equal(sessionStorage.getItem('smart-stars-page'), 'profile');
-  assert.deepEqual(api.unexpected, []);
-});
+// ------------------------------------------------------------
+// Test 1: Navigation and working-plan API context
+// ------------------------------------------------------------
+
+test(
+  'sidebar and Explorer shortcut open Profile, retain working-plan context, breadcrumb and Leo',
+  async t => {
+    const api = fixtureApi(t);
+
+    await mount();
+
+    assert.equal(
+      document.querySelector('h1').textContent,
+      'Course Explorer'
+    );
+
+    await click(nav('Student profile'));
+
+    await waitFor(curriculumHeading);
+
+    assert.equal(
+      document.querySelector('h1').textContent,
+      'Student Profile'
+    );
+
+    assert.equal(
+      nav('Student profile').getAttribute('aria-current'),
+      'page'
+    );
+
+    assert.equal(
+      document.querySelector('.topbar strong').textContent,
+      'Student profile'
+    );
+
+    // Internal plan information must not be displayed.
+    assert.equal(
+      document.querySelector('.profile-context'),
+      null
+    );
+
+    // Leo Assistant and Planner navigation must remain available.
+    assert.ok(
+      document.querySelector('[aria-label="Open Leo Assistant"]')
+    );
+
+    assert.ok(nav('My planner'));
+
+    await click(nav('Course explorer'));
+    await click(document.querySelector('.degree-audit'));
+
+    assert.equal(
+      document.querySelector('h1').textContent,
+      'Student Profile'
+    );
+
+    // The correct plan must still be passed to the backend.
+    assert.ok(
+      api.calls.includes(
+        '/api/students/DEMO001/curriculum/progress?plan_id=7'
+      )
+    );
+
+    assert.equal(
+      sessionStorage.getItem('smart-stars-page'),
+      'profile'
+    );
+
+    assert.deepEqual(api.unexpected, []);
+  }
+);
+
+// ------------------------------------------------------------
+// Test 2: Refresh preserves the correct planning context
+// ------------------------------------------------------------
+
+test(
+  'refresh restores the Profile page and waits for the app working plan before loading Curriculum',
+  async t => {
+    const api = fixtureApi(t);
+
+    sessionStorage.setItem('smart-stars-page', 'profile');
+
+    await mount();
+    await waitFor(curriculumHeading);
+
+    assert.equal(
+      document.querySelector('h1').textContent,
+      'Student Profile'
+    );
+
+    // The internal Working Plan panel should remain hidden.
+    assert.equal(
+      document.querySelector('.profile-context'),
+      null
+    );
+
+    // Verify that the correct plan is still used after refresh.
+    assert.ok(
+      api.calls.includes(
+        '/api/students/DEMO001/curriculum/progress?plan_id=7'
+      )
+    );
+
+    assert.ok(
+      api.calls
+        .filter(path => path.includes('/curriculum/progress'))
+        .every(path => path.endsWith('?plan_id=7'))
+    );
+
+    assert.deepEqual(api.unexpected, []);
+  }
+);
+
+// ------------------------------------------------------------
+// Test 3: Academic-only context when no plan exists
+// ------------------------------------------------------------
+
+test(
+  'Profile refresh without plans uses academic-only context',
+  async t => {
+    const api = fixtureApi(t, {
+      noPlan: true,
+    });
+
+    sessionStorage.setItem('smart-stars-page', 'profile');
+
+    await mount();
+    await waitFor(curriculumHeading);
+
+    // No internal planning-context panel should appear.
+    assert.equal(
+      document.querySelector('.profile-context'),
+      null
+    );
+
+    // Curriculum must load without an inferred plan ID.
+    assert.ok(
+      api.calls.includes(
+        '/api/students/DEMO001/curriculum/progress'
+      )
+    );
+
+    assert.equal(
+      api.calls.some(path =>
+        path.includes('/curriculum/progress?plan_id=')
+      ),
+      false
+    );
+
+    assert.deepEqual(api.unexpected, []);
+  }
+);
+
+// ------------------------------------------------------------
+// Test 4: Planning-context error and retry
+// ------------------------------------------------------------
+
+test(
+  'failed initial planning context can be retried from Profile without hiding academic sections',
+  async t => {
+    const api = fixtureApi(t, {
+      failInitialContext: true,
+    });
+
+    sessionStorage.setItem('smart-stars-page', 'profile');
+
+    await mount();
+
+    await waitFor('.student-profile [role="alert"]');
+
+    assert.match(
+      document.querySelector('.student-profile').textContent,
+      /Planning context could not be loaded/
+    );
+
+    // Degree Audit must remain available despite the planning error.
+    assert.match(
+      document.querySelector('.student-profile').textContent,
+      /No academic attempts recorded/
+    );
+
+    // Restore the mocked planning API.
+    api.recover();
+
+    await click(
+      document.querySelector(
+        '[aria-labelledby="profile-curriculum-title"] button'
+      )
+    );
+
+    await waitFor(curriculumHeading);
+
+    // Verify that retry loads the correct planning context.
+    assert.ok(
+      api.calls.includes(
+        '/api/students/DEMO001/curriculum/progress?plan_id=7'
+      )
+    );
+
+    // The technical Working Plan panel must remain hidden.
+    assert.equal(
+      document.querySelector('.profile-context'),
+      null
+    );
+
+    assert.deepEqual(api.unexpected, []);
+  }
+);
+
+// ------------------------------------------------------------
+// Test 5: Export Plan navigation remains independent
+// ------------------------------------------------------------
+
+test(
+  'export query still routes to ExportPlan independently of saved Profile navigation',
+  async t => {
+    dom.reconfigure({
+      url: 'http://localhost:5173/?exportPlan=7',
+    });
+
+    sessionStorage.setItem('smart-stars-page', 'profile');
+
+    const calls = [];
+
+    t.mock.method(globalThis, 'fetch', async path => {
+      calls.push(path);
+
+      return Response.json(
+        {
+          success: false,
+          message: 'Export plan unavailable',
+        },
+        { status: 404 }
+      );
+    });
+
+    await mount();
+
+    assert.ok(
+      calls.length > 0 &&
+      calls.every(path => path === '/api/plans/7/summary')
+    );
+
+    assert.equal(
+      document.querySelector('.student-profile'),
+      null
+    );
+
+    assert.match(
+      document.body.textContent,
+      /Export plan unavailable/
+    );
+  }
+);
 
 for (const requestWithoutPlan of [false, true]) test(`Explorer retains unavailable courses and separates availability from eligibility (request-only=${requestWithoutPlan})`, async t => {
   const planning_term = { academic_year: '2026-2027', semester: 1 };
@@ -103,51 +458,4 @@ for (const requestWithoutPlan of [false, true]) test(`Explorer retains unavailab
   assert.equal(document.querySelector('.dialog-action').disabled, true);
   assert.match(document.querySelector('[role="dialog"] .availability').textContent, /Not offered in Semester 1/);
   assert.deepEqual(api.unexpected, []);
-});
-
-test('refresh restores the Profile page and waits for the app working plan before loading Curriculum', async t => {
-  const api = fixtureApi(t);
-  sessionStorage.setItem('smart-stars-page', 'profile');
-  await mount();
-  await waitFor('.profile-context');
-  assert.equal(document.querySelector('h1').textContent, 'Student Profile');
-  assert.match(document.querySelector('.profile-context').textContent, /My working plan · Plan 7/);
-  assert.ok(api.calls.filter(path => path.includes('/curriculum/progress')).every(path => path.endsWith('?plan_id=7')));
-  assert.deepEqual(api.unexpected, []);
-});
-
-test('Profile refresh without plans uses academic-only context', async t => {
-  const api = fixtureApi(t, { noPlan: true }); sessionStorage.setItem('smart-stars-page', 'profile');
-  await mount();
-  await waitFor('.profile-context');
-  assert.match(document.querySelector('.profile-context').textContent, /Academic-only context/);
-  assert.ok(api.calls.includes('/api/students/DEMO001/curriculum/progress'));
-  assert.deepEqual(api.unexpected, []);
-});
-
-test('failed initial planning context can be retried from Profile without hiding academic sections', async t => {
-  const api = fixtureApi(t, { failInitialContext: true }); sessionStorage.setItem('smart-stars-page', 'profile');
-  await mount();
-  await waitFor('.student-profile [role="alert"]');
-  assert.match(document.querySelector('.student-profile').textContent, /Planning context could not be loaded/);
-  assert.match(document.querySelector('.student-profile').textContent, /No academic attempts recorded/);
-  api.recover();
-  await click(document.querySelector('[aria-labelledby="profile-curriculum-title"] button'));
-  await waitFor('.profile-context');
-  assert.match(document.querySelector('.profile-context').textContent, /My working plan · Plan 7/);
-  assert.deepEqual(api.unexpected, []);
-});
-
-test('export query still routes to ExportPlan independently of saved Profile navigation', async t => {
-  dom.reconfigure({ url: 'http://localhost:5173/?exportPlan=7' });
-  sessionStorage.setItem('smart-stars-page', 'profile');
-  const calls = [];
-  t.mock.method(globalThis, 'fetch', async path => {
-    calls.push(path);
-    return Response.json({ success: false, message: 'Export plan unavailable' }, { status: 404 });
-  });
-  await mount();
-  assert.ok(calls.length > 0 && calls.every(path => path === '/api/plans/7/summary'));
-  assert.equal(document.querySelector('.student-profile'), null);
-  assert.match(document.body.textContent, /Export plan unavailable/);
 });

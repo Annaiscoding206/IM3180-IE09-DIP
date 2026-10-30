@@ -6,6 +6,10 @@ import "./student-profile.css";
 const value = input => input === null || input === undefined || input === "" ? "Not recorded" : input;
 const decision = input => input === true ? "Yes" : input === false ? "No" : "Unknown";
 const codes = input => input?.length ? input.join(", ") : "None";
+const statusLabel = status => ({
+  IN_PROGRESS: "IN PROGRESS",
+  NOT_YET_TAKEN: "NOT YET TAKEN"
+}[status] ?? value(status));
 
 // Each section owns its request, retry and error. Keying the visible state also
 // hides old-plan data during the render before the next effect starts.
@@ -65,7 +69,8 @@ function PersonalInformation({ student }) {
     <dl className="profile-fields">
       {[["Student name", student.student_name], ["Student ID", student.student_id],
         ["Programme", student.programme], ["Study year", student.study_year],
-        ["Admission year / cohort", student.admission_year], ["Admission route", student.admission_route]]
+        ["Admission year / cohort", student.admission_year],
+        ["Admission route", student.admission_route === "DIRECT_ENTRY" ? "Direct Entry" : student.admission_route]]
         .map(([label, content]) => <div key={label}><dt>{label}</dt><dd>{value(content)}</dd></div>)}
     </dl>
   </div>;
@@ -78,17 +83,20 @@ function DegreeAudit({ audit }) {
     {summary && <>
       <dl className="profile-fields profile-metrics">
         <div><dt>Passed courses</dt><dd>{value(summary.passed_course_count)}</dd></div>
-        <div><dt>Earned AU{summary.earned_au_complete === false ? " (known subtotal)" : ""}</dt><dd>{value(summary.earned_au)}</dd></div>
+        <div><dt>Recorded AU</dt><dd>{value(summary.earned_au)}</dd></div>
         <div><dt>Earned AU complete</dt><dd>{decision(summary.earned_au_complete)}</dd></div>
       </dl>
-      {summary.earned_au_complete === false && <p className="profile-warning">Earned AU is incomplete. Unknown credit for: {codes(summary.unknown_au_course_codes)}. Unknown AU is not counted as a known zero.</p>}
     </>}
     {!audit.records?.length ? <p>No academic attempts recorded yet.</p> :
       <Table label="Academic attempts" headings={["Course code", "Course title", "Academic year", "Semester", "Result", "Grade", "Earned AU"]}>
         {audit.records.map(record => <tr key={record.record_id}>
           <th scope="row">{record.course_code}</th><td>{value(record.course_title)}</td>
           <td>{value(record.academic_year)}</td><td>{value(record.semester)}</td>
-          <td><span className={`profile-badge result-${record.result}`}>{record.result}</span></td>
+          <td>
+            <span className={`profile-badge result-${record.result}`}>
+              {statusLabel(record.result)}
+            </span>
+          </td>
           <td>{value(record.grade)}</td><td>{record.earned_au == null ? "Unknown" : record.earned_au}</td>
         </tr>)}
       </Table>}
@@ -101,12 +109,22 @@ function Progress({ progress }) {
   return <>
     <dl className="profile-fields profile-metrics">
       <div><dt>Required AU</dt><dd>{value(progress.required_au)}</dd></div>
-      <div><dt>Completed AU{progress.au_complete === false ? " (known subtotal)" : ""}</dt><dd>{value(progress.completed_au)}</dd></div>
-      <div><dt>Remaining AU{progress.remaining_au_is_upper_bound ? " (upper bound)" : ""}</dt><dd>{value(progress.remaining_au)}</dd></div>
+      <div>
+        <dt>Recorded completed AU</dt>
+        <dd>{value(progress.completed_au)}</dd>
+      </div>
+
+      <div>
+        <dt>
+          {progress.remaining_au_is_upper_bound
+            ? "Estimated remaining AU"
+            : "Remaining AU"}
+        </dt>
+        <dd>{value(progress.remaining_au)}</dd>
+      </div>
       <div><dt>AU complete</dt><dd>{decision(progress.au_complete)}</dd></div>
       {Object.hasOwn(progress, "requirements_satisfied") && <div><dt>Requirements satisfied</dt><dd>{decision(progress.requirements_satisfied)}</dd></div>}
     </dl>
-    {progress.au_complete === false && <p className="profile-warning">Credit is incomplete for: {codes(progress.unknown_au_course_codes)}. Remaining AU may decrease when missing credit is recorded.</p>}
     <dl className="profile-requirements">
       <div><dt>Completed requirements</dt><dd>{codes(progress.completed_required_courses)}</dd></div>
       <div><dt>Remaining requirements</dt><dd>{codes(progress.remaining_required_courses)}</dd></div>
@@ -118,27 +136,36 @@ function Curriculum({ data }) {
   if (!data?.curriculum) return <p>No curriculum is available.</p>;
   const context = data.planning_context;
   return <>
-    <div className="profile-context" aria-label="Planning context">
-      <strong>{context?.scope === "EXPLICIT_PLAN"
-        ? `Working plan: ${context.plan_name || "Unnamed plan"} · Plan ${context.plan_id}`
-        : context?.scope === "ACADEMIC_ONLY" ? "Academic-only context · No working plan" : "Planning context unavailable"}</strong>
-      {context?.scope === "EXPLICIT_PLAN" && <p>Request {context.request_id} · AY {value(context.academic_year)} · Semester {value(context.semester)} · {value(context.plan_status)}</p>}
-      <p>Planned status and selection-dependent eligibility use this context. Completed courses and AU remain student-wide.</p>
-    </div>
-    <h3>{data.curriculum.title}</h3>
-    <p className="profile-help">Curriculum: {value(data.curriculum.curriculum_key ?? data.curriculum.curriculum_id)}</p>
+    <h3>
+      {String(data.curriculum.title ?? "Programme Curriculum")
+        .replace(/^Synthetic\s+/i, "")
+        .replace(/\s+Demo(?=\s+Curriculum$)/i, "")}
+    </h3>
     <dl className="profile-fields">
       <div><dt>Programme</dt><dd>{value(data.matching?.programme)}</dd></div>
       <div><dt>Admission year</dt><dd>{value(data.matching?.admission_year)}</dd></div>
-      <div><dt>Admission route</dt><dd>{value(data.matching?.admission_route)}</dd></div>
+      <div>
+        <dt>Admission route</dt>
+        <dd>
+          {value(
+            data.matching?.admission_route === "DIRECT_ENTRY"
+              ? "Direct Entry"
+              : data.matching?.admission_route
+          )}
+        </dd>
+      </div>
     </dl>
-    {Boolean(data.curriculum.is_demo) && <p className="profile-warning">This curriculum is a synthetic prototype, not an official graduation audit.</p>}
     <h3>Overall requirements</h3><Progress progress={data.summary} />
     {data.unallocated_passed_course_codes?.length > 0 && <p className="profile-help">Passed courses outside this curriculum: {codes(data.unallocated_passed_course_codes)}</p>}
     <div className="profile-categories">
       {!data.categories?.length && <p>No curriculum categories recorded.</p>}
       {data.categories?.map(category => <section className="profile-category" key={category.category_code} aria-label={`${category.category_code} requirements`}>
-        <h3>{category.category_code} · {category.title}</h3><Progress progress={category} />
+        <h3>
+          {category.category_code} ·{" "}
+          {String(category.title ?? "")
+            .replace(/^Demo\s+/i, "")
+            .replace(/^./, (first) => first.toUpperCase())}
+        </h3><Progress progress={category} />
         {category.elective_groups?.length > 0 && <>
           <h4>Elective groups</h4>
           {category.elective_groups.map(group => <div className="profile-group" key={group.group_code}>
@@ -154,7 +181,11 @@ function Curriculum({ data }) {
         {data.courses.map(course => <tr key={course.course_code}>
           <th scope="row">{course.course_code}<span className="profile-course-title">{value(course.course_title)}</span></th>
           <td>{course.category_code}{course.group_code ? ` / ${course.group_code}` : ""}</td>
-          <td><span className={`profile-badge status-${course.status}`}>{value(course.status)}</span></td>
+          <td>
+            <span className={`profile-badge status-${course.status}`}>
+              {statusLabel(course.status)}
+            </span>
+          </td>
           <td>{decision(course.eligible)}</td><td>{decision(course.can_select)}</td>
           <td>{course.eligibility?.requires_review && <strong>Review required. </strong>}{course.eligibility?.message || "Eligibility explanation unavailable."}</td>
         </tr>)}

@@ -15,6 +15,8 @@ export default function ChatWidget() {
 
   const bottomRef = useRef(null);
   const messageIdRef = useRef(0);
+  // Prevent history refreshes from overwriting a message being sent.
+  const sendingRef = useRef(false);
 
   // Scroll to the latest message when the panel is open.
   useEffect(() => {
@@ -25,22 +27,34 @@ export default function ChatWidget() {
     }
   }, [messages, isSending, isOpen]);
 
-  // Load shared conversation history whenever Leo opens.
+  // Load shared history when Leo opens or the website regains focus.
   useEffect(() => {
     if (!isOpen) return;
 
     let cancelled = false;
+    let latestLoadId = 0;
 
     const loadHistory = async () => {
+      // Do not overwrite messages while the student is sending.
+      if (sendingRef.current) return;
+
+      const loadId = ++latestLoadId;
+
       setIsLoadingHistory(true);
       setError("");
 
       try {
         const result = await api.getActiveChat();
 
-        if (cancelled) return;
+        // Ignore outdated requests and in-progress message sends.
+        if (
+          cancelled ||
+          loadId !== latestLoadId ||
+          sendingRef.current
+        ) {
+          return;
+        }
 
-        // Convert MySQL messages into ChatWidget format.
         const savedMessages = Array.isArray(result.data)
           ? result.data.map((message, index) => ({
               id: `saved-${message.message_id ?? index}`,
@@ -53,23 +67,47 @@ export default function ChatWidget() {
         setMessages(savedMessages);
 
       } catch (err) {
-        if (!cancelled) {
+        if (
+          !cancelled &&
+          loadId === latestLoadId &&
+          !sendingRef.current
+        ) {
           setError(
             err.message || "Unable to load conversation history."
           );
         }
 
       } finally {
-        if (!cancelled) {
+        if (!cancelled && loadId === latestLoadId) {
           setIsLoadingHistory(false);
         }
       }
     };
 
+    // Refresh when the browser becomes active again.
+    const refreshOnFocus = () => {
+      if (document.visibilityState === "visible") {
+        loadHistory();
+      }
+    };
+
+    // Initial history load.
     loadHistory();
+
+    window.addEventListener("focus", refreshOnFocus);
+    document.addEventListener(
+      "visibilitychange",
+      refreshOnFocus
+    );
 
     return () => {
       cancelled = true;
+
+      window.removeEventListener("focus", refreshOnFocus);
+      document.removeEventListener(
+        "visibilitychange",
+        refreshOnFocus
+      );
     };
   }, [isOpen]);
 
@@ -84,7 +122,7 @@ export default function ChatWidget() {
       setError("Your message is too long.");
       return;
     }
-
+    sendingRef.current = true;
     // Add the student's message immediately.
     setMessages((previous) => [
       ...previous,
@@ -124,6 +162,7 @@ export default function ChatWidget() {
         err.message || "Unable to contact Le Assistant."
       );
     } finally {
+      sendingRef.current = false;
       setIsSending(false);
     }
   };

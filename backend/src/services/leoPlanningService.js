@@ -5,7 +5,7 @@ const plans = require("./planService");
 const preferences = require("./preferenceService");
 const { validatePreferences } = require("./preferenceValidation");
 const summaries = require("./planningSummaryService");
-const { generatePlans } = require("./generationService");
+const { generatePlans, regeneratePlan } = require("./generationService");
 
 // Only exact application-recognized commands authorize writes. A model-supplied
 // confirmation boolean, quoted command or casual acknowledgement is insufficient.
@@ -133,4 +133,66 @@ function failure(error) {
   if (!(error instanceof plans.PlanningError)) throw error;
   return { status: "rejected", success: false, http_status: error.status, message: error.message, ...error.details };
 }
-module.exports = { parsePlanningCommand, stagePreferenceDraft, readDraft, confirmPreferenceDraft, generateForStudent, getPlanningContext, resolveEligibilityPlan, failure };
+async function regenerateNamedPlan(studentId, requestId, planLetter) {
+  if (typeof studentId !== "string" || !studentId.trim()) {
+    throw new plans.PlanningError(401, "Student identity required");
+  }
+
+  const letter = String(planLetter ?? "").trim().toUpperCase();
+
+  if (!["A", "B", "C"].includes(letter)) {
+    throw new plans.PlanningError(400, "Choose Plan A, B, or C.");
+  }
+
+  // Retrieve only plans belonging to the student's planning request.
+  const availablePlans = await summaries.getRequestPlanSummaries(
+    requestId,
+    studentId
+  );
+
+  // Match names such as "AUTO Plan B #1".
+  const namePattern = new RegExp(
+    `(?:^|\\s)Plan\\s+${letter}(?=\\s|#|$)`,
+    "i"
+  );
+
+  const matchingPlans = availablePlans
+    .filter(plan =>
+      String(plan.status).toUpperCase() === "GENERATED" &&
+      !plan.active_selection &&
+      namePattern.test(String(plan.plan_name ?? plan.label ?? ""))
+    )
+    .sort((a, b) => Number(b.plan_id) - Number(a.plan_id));
+
+  if (!matchingPlans.length) {
+    throw new plans.PlanningError(
+      404,
+      `No available Plan ${letter} was found for request ${requestId}.`
+    );
+  }
+
+  const selectedPlan = matchingPlans[0];
+
+  // Keyue's service verifies ownership again before making changes.
+  const result = await regeneratePlan(
+    selectedPlan.plan_id,
+    studentId
+  );
+
+  return {
+    ...result,
+    plan_label: `Plan ${letter}`
+  };
+}
+module.exports = {
+  parsePlanningCommand,
+  stagePreferenceDraft,
+  readDraft,
+  confirmPreferenceDraft,
+  generateForStudent,
+  regeneratePlan,
+  regenerateNamedPlan,
+  getPlanningContext,
+  resolveEligibilityPlan,
+  failure
+};

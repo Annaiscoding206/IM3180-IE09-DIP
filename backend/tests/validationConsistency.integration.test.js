@@ -202,8 +202,12 @@ test("consistent validation, ownership, invalidation and selection over live MyS
   await t.test("plan detail/list distinguish a stale stored selection after out-of-band data changes", async () => {
     const c = await context(["A"]); await rankAndSelect(c.plan_id);
     const before = await state(c.plan_id);
-    await pool.query(`INSERT INTO plan_blocked_period (plan_id, day_of_week, start_time, end_time)
-      VALUES (?, 'MON', '09:30:00', '10:30:00')`, [c.plan_id]);
+    await pool.query(
+      `INSERT INTO plan_blocked_period
+      (plan_id, day_of_week, start_time, end_time)
+      VALUES (?, 'MON', '09:30:00', '10:30:00')`,
+      [c.plan_id]
+    );
     const detail = await http("GET", `/plans/${c.plan_id}`);
     assert.equal(detail.status, 200); assert.equal(detail.data.stored_status, "SELECTED");
     assert.equal(detail.data.status, "GENERATED"); assert.equal(detail.data.selection_state, "STALE_INVALID");

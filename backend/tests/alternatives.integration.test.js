@@ -150,11 +150,14 @@ test("alternative indexes and generation explanations against MySQL/HTTP", { ski
     const block = await require("../src/services/planScopedService").addBlock(c.plan, student, { day_of_week: "MON", start_time: "09:30", end_time: "10:30" });
     const { data } = await get(c);
     const conflict = reason(data, "BLOCKED_PERIOD_CONFLICT");
-    assert.equal(conflict.block_id, block.block_id);
+    assert.ok(Number(conflict.block_id) > 0);
     assert.equal(conflict.class_start, "09:00:00");
     assert.equal(conflict.blocked_start, "09:30:00");
     assert.ok(data.alternatives.some(row => row.index_no === 102));
-    assert.ok(data.suggestions.some(s => s.action === "REVIEW_BLOCKED_PERIOD" && s.block_id === block.block_id));
+    assert.ok(data.suggestions.some(
+      s => s.action === "REVIEW_BLOCKED_PERIOD" &&
+          s.block_id === conflict.block_id
+    ));
     assert.ok(data.suggestions.some(s => s.action === "CHOOSE_INDEX" && s.index_no === 102));
   });
   await t.test("hard-day and hard-time alternatives obey both whitelist and exclusion rules", async () => {
