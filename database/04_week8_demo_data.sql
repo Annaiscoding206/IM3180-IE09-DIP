@@ -62,7 +62,7 @@ SELECT
     'FRI',
     '08:30:00',
     '10:20:00',
-    'DEMO-LT',
+    'LT20',
     NULL
 WHERE @add_mh1811_demo_slots = 1;
 
@@ -85,7 +85,7 @@ SELECT
     'MON',
     '12:30:00',
     '13:20:00',
-    'DEMO-TR',
+    'TR+111',
     NULL
 WHERE @add_mh1811_demo_slots = 1;
 
