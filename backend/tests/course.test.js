@@ -7,6 +7,7 @@ function setup(query) {
   const sandbox = { module: { exports: {} }, console: { error() {} }, require(name) {
     if (name === '../services/planningError') return require('../src/services/planningError');
     if (name === '../services/curriculumService') return require('../src/services/curriculumService');
+    if (name === '../services/planContextService') return require('../src/services/planContextService');
     assert.equal(name, '../config/db'); return { query };
   }};
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../src/controllers/courseController.js'), 'utf8'), sandbox);
@@ -27,6 +28,7 @@ test('invalid filters fail before querying the database', async () => {
 });
 test('search and filters use bound values and preserve response envelope', async () => {
   const call = setup(async (sql, params) => {
+    if (/WHERE course_code IN/.test(sql)) return [[{course_code:'IE3014',academic_year:'2026-2027',semester:1}]];
     assert.match(sql, /course_code LIKE \?/);
     assert.deepEqual(Array.from(params), ["%O'Reilly%", "%O'Reilly%", '3', '1', '2026-2027']);
     return [[{course_code:'IE3014', au:3}]];
@@ -38,9 +40,16 @@ test('empty search results remain a successful empty list', async () => {
   const r = await setup(async () => [[]])('getCourses');
   assert.deepEqual(r.body,{success:true,count:0,data:[]});
 });
+test('anonymous catalogue callers cannot supply planning context', async () => {
+  const call = setup(async () => [[{course_code:'IE3014',au:3}]]);
+  for (const query of [{plan_id:'1'},{planning_request_id:'1'}]) {
+    assert.equal((await call('getCourses',{},query)).status,401);
+  }
+});
 test('detail and index lookup normalize course code and preserve existing fields', async () => {
   for (const handler of ['getCourseByCode','getCourseIndexes']) {
     const call = setup(async (sql, params) => {
+      if (/WHERE course_code IN/.test(sql)) return [[{course_code:'IE3014',academic_year:'2026-2027',semester:1}]];
       assert.equal(params[0],'IE3014');
       return [/vacancy/.test(sql) ? [{index_no:12345,vacancy:5,vacancy_updated_at:null}] : [{course_code:'IE3014',au:3}]];
     });

@@ -30,7 +30,7 @@ const waitFor = async selector => {
   assert.fail(`Did not render ${selector}: ${document.body.textContent}`);
 };
 
-function fixtureApi(t, { noPlan = false, failInitialContext = false } = {}) {
+function fixtureApi(t, { noPlan = false, requestWithoutPlan = false, failInitialContext = false, courses = [] } = {}) {
   const calls = [], unexpected = [];
   let fail = failInitialContext;
   const request = { request_id: 10, academic_year: '2026-2027', semester: 1, target_au: 15 };
@@ -40,12 +40,14 @@ function fixtureApi(t, { noPlan = false, failInitialContext = false } = {}) {
     const url = new URL(path, 'http://localhost');
     let data;
     if (url.pathname === '/api/students/DEMO001') data = { student_id: 'DEMO001', student_name: 'Sam Tan', programme: 'CE', study_year: 2, completed_courses: [] };
-    else if (url.pathname === '/api/courses') data = [];
+    else if (url.pathname === '/api/courses') data = courses;
+    else if (url.pathname.startsWith('/api/courses/')) data = { ...courses.find(c => c.course_code === url.pathname.split('/')[3]), indexes: [] };
+    else if (url.pathname.includes('/eligibility/')) return Response.json({ success: true, eligible: !url.pathname.endsWith('/COREQ'), can_select: true, message: 'Backend academic result' });
     else if (url.pathname === '/api/planning-requests') {
       if (fail) return Response.json({ success: false, message: 'Planning requests unavailable' }, { status: 500 });
       data = noPlan ? [] : [request];
     } else if (url.pathname === '/api/planning-requests/10') data = request;
-    else if (url.pathname === '/api/planning-requests/10/plans') data = [plan];
+    else if (url.pathname === '/api/planning-requests/10/plans') data = requestWithoutPlan ? [] : [plan];
     else if (url.pathname === '/api/planning-requests/10/active-plan') data = { plan: null };
     else if (url.pathname === '/api/plans/7/selected-courses') data = [];
     else if (url.pathname.endsWith('/degree-audit')) data = { records: [], summary: { passed_course_count: 0, earned_au: 0, earned_au_complete: true } };
@@ -76,6 +78,30 @@ test('sidebar and Explorer shortcut open Profile, retain working-plan context, b
   assert.equal(document.querySelector('h1').textContent, 'Student Profile');
   assert.ok(api.calls.includes('/api/students/DEMO001/curriculum/progress?plan_id=7'));
   assert.equal(sessionStorage.getItem('smart-stars-page'), 'profile');
+  assert.deepEqual(api.unexpected, []);
+});
+
+for (const requestWithoutPlan of [false, true]) test(`Explorer retains unavailable courses and separates availability from eligibility (request-only=${requestWithoutPlan})`, async t => {
+  const planning_term = { academic_year: '2026-2027', semester: 1 };
+  const courses = ['SEM1', 'SEM2', 'BOTH', 'COREQ'].map((course_code, i) => ({ course_code, course_name: course_code,
+    au: 3, grading_type: 'LETTER_GRADED', academic_year: '2026-2027', semester: i === 1 ? 2 : 1,
+    planning_term, available_for_planning_term: i !== 1, course_types: ['CORE'] }));
+  const api = fixtureApi(t, { courses, requestWithoutPlan });
+  await mount(); await waitFor('.course-card .status.eligible');
+  const cards = [...document.querySelectorAll('.course-card')];
+  assert.equal(cards.length, 4);
+  for (const [i, card] of cards.entries()) {
+    assert.equal(card.querySelector('.status').textContent, i === 3 ? 'Not yet eligible' : 'Eligible', 'Term availability must not change academic status');
+    assert.equal(card.querySelector('.course-action').disabled, i === 1);
+  }
+  assert.match(cards[1].querySelector('.availability').textContent, /Not offered in Semester 1/);
+  await click(cards[1].querySelector('.course-action'));
+  assert.ok(api.calls.every(path => !path.includes('/selected-courses') || path.endsWith('/plans/7/selected-courses')));
+  assert.ok(api.calls.includes(requestWithoutPlan ? '/api/courses?planning_request_id=10' : '/api/courses?plan_id=7'));
+  await click(cards[1].querySelector('.detail-link'));
+  await waitFor('.dialog-action');
+  assert.equal(document.querySelector('.dialog-action').disabled, true);
+  assert.match(document.querySelector('[role="dialog"] .availability').textContent, /Not offered in Semester 1/);
   assert.deepEqual(api.unexpected, []);
 });
 

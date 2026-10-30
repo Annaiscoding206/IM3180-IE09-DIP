@@ -1,6 +1,49 @@
 const { PlanningError } = require("../services/planningError");
 const pool = require("../config/db");
 const { getCourseAnnotations } = require("../services/curriculumService");
+const { resolvePlanContext, contextId } = require("../services/planContextService");
+
+// planning_request_id is term-only: it never supplies request-level selections
+// to academic eligibility or Curriculum. plan_id retains independent-plan context.
+async function catalogueRows(courses, req, res) {
+  const annotate = await completionAnnotation(req, res);
+  const student = res.locals?.authenticatedStudentId;
+  let term = null;
+  if (req.query.plan_id !== undefined) {
+    const context = await resolvePlanContext(student, {
+      plan_id: req.query.plan_id,
+      ...(req.query.request_id !== undefined ? { request_id: req.query.request_id } : {}),
+    });
+    term = { academic_year: context.academic_year, semester: context.semester };
+    if (req.query.planning_request_id !== undefined &&
+        contextId(req.query.planning_request_id, 'planning_request_id') !== Number(context.request_id)) {
+      throw new PlanningError(404, 'Plan does not belong to this planning request');
+    }
+  } else if (req.query.planning_request_id !== undefined) {
+    if (!student) throw new PlanningError(401, 'Student identity required');
+    const id = contextId(req.query.planning_request_id, 'planning_request_id');
+    const [[request]] = await pool.query('SELECT academic_year, semester FROM planning_request WHERE request_id = ? AND student_id = ?', [id, student]);
+    if (!request) throw new PlanningError(404, 'Planning request not found');
+    term = { academic_year: request.academic_year, semester: request.semester };
+  }
+  if (!courses.length) return [];
+  const [offerings] = await pool.query(`SELECT DISTINCT course_code, academic_year, semester
+    FROM course_info WHERE course_code IN (?) ORDER BY academic_year, semester`, [[...new Set(courses.map(c => c.course_code))]]);
+  const matches = row => term !== null && row.academic_year === term.academic_year && Number(row.semester) === Number(term.semester);
+  // One card per course, preferring metadata for the planning term, otherwise
+  // the latest returned offering. Explicit catalogue filters still constrain rows.
+  const grouped = new Map();
+  for (const row of [...courses].sort((a, b) => Number(matches(b)) - Number(matches(a)) ||
+    String(b.academic_year).localeCompare(String(a.academic_year)) || Number(b.semester) - Number(a.semester))) {
+    if (!grouped.has(row.course_code)) grouped.set(row.course_code, row);
+  }
+  return [...grouped.values()].sort((a, b) => a.course_code.localeCompare(b.course_code)).map(row => {
+    const terms = offerings.filter(o => o.course_code === row.course_code)
+      .map(({ academic_year, semester }) => ({ academic_year, semester }));
+    return { ...annotate(withCourseTypes(row)), available_semesters: terms,
+      planning_term: term, available_for_planning_term: term === null ? null : terms.some(matches) };
+  });
+}
 
 async function completionAnnotation(req, res) {
   const student = res.locals?.authenticatedStudentId;
@@ -127,12 +170,12 @@ if (conditions.length > 0) {
     sql += ` ORDER BY course_code`;
 
     const [courses] = await pool.query(sql, params);
-    const annotate = await completionAnnotation(req, res);
+    const annotated = await catalogueRows(courses, req, res);
 
     res.status(200).json({
       success: true,
-      count: courses.length,
-      data: courses.map(withCourseTypes).map(annotate),
+      count: annotated.length,
+      data: annotated,
     });
   } catch (error) {
     if (error instanceof PlanningError) return res.status(error.status).json({ success: false, message: error.message, ...error.details });
@@ -195,7 +238,9 @@ const getCourseByCode = async (req, res) => {
       SELECT DISTINCT
       index_no,
       vacancy,
-      vacancy_updated_at
+      vacancy_updated_at,
+      academic_year,
+      semester
       FROM course_info
       WHERE course_code = ?
       ORDER BY index_no
@@ -203,11 +248,11 @@ const getCourseByCode = async (req, res) => {
     [courseCode]
     );
 
-    const annotate = await completionAnnotation(req, res);
+    const annotated = await catalogueRows(courses, req, res);
     res.status(200).json({
       success: true,
       data: {
-        ...annotate(withCourseTypes(courses[0])),
+        ...annotated[0],
         indexes: indexes
       }
     });

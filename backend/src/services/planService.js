@@ -565,7 +565,10 @@ async function addCourseToRequest(requestId, courseCode) {
       "SELECT course_code FROM course_info WHERE course_code = ? AND academic_year = ? AND semester = ? LIMIT 1",
       [code, requests[0].academic_year, requests[0].semester]
     );
-    if (!offerings.length) throw new PlanningError(422, "Course is not offered in the planning request term");
+    if (!offerings.length) throw new PlanningError(422, "Course is not offered in the planning request term", {
+      code: "COURSE_NOT_AVAILABLE_IN_TERM", course_code: code,
+      academic_year: requests[0].academic_year, semester: requests[0].semester,
+    });
 
     await db.query(
       `INSERT INTO planning_request_course (request_id, course_code)

@@ -114,6 +114,10 @@ const courseStatus = (course, selectedCodes, completedCodes) => {
   return course.eligibility?.eligible ? "eligible" : "not-yet";
 };
 
+const availabilityMessage = course => course.available_for_planning_term === false
+  ? `Not offered in Semester ${course.planning_term.semester} (AY ${displayYear(course.planning_term.academic_year)})`
+  : "";
+
 const formatSlot = (slot) =>
   `${slot.day_of_week} ${String(slot.start_time).slice(0, 5)}–${String(
     slot.end_time
@@ -159,7 +163,7 @@ function App() {
   workingPlanRef.current = workingPlanId;
   const detailGeneration = useRef(0);
   // Invalidate immediately during a context render, before effects run.
-  const nextContextKey = `${workingPlanId}:${selectionRevision}`;
+  const nextContextKey = `${workingPlanId}:${planningRequest?.request_id}:${selectionRevision}`;
   if (contextKey.current !== nextContextKey) {
     contextLoader.current.invalidate();
     contextKey.current = nextContextKey;
@@ -178,8 +182,6 @@ function App() {
   const [reasonProblem, setReasonProblem] = useState(null);
 
   const [query, setQuery] = useState("");
-  const [academicYear, setAcademicYear] = useState("All years");
-  const [semester, setSemester] = useState("All semesters");
   const [au, setAu] = useState("All AU values");
   const [courseType, setCourseType] = useState("All course types");
 
@@ -268,10 +270,6 @@ function App() {
             }))
           );
 
-          if (requestDetail) {
-            setAcademicYear(requestDetail.academic_year);
-            setSemester(String(requestDetail.semester));
-          }
         }
       } catch (loadError) {
         if (!cancelled) {
@@ -293,15 +291,16 @@ function App() {
 
   useEffect(() => {
     if (loading || !student) return;
-    setCourses(current => current.map(course => ({ ...course, eligibility: null, curriculum_status: null })));
+    setCourses(current => current.map(course => ({ ...course, eligibility: null, curriculum_status: null,
+      available_for_planning_term: null, planning_term: null })));
     detailGeneration.current++;
     setActiveCourse(null);
     setContextError("");
     contextLoader.current.load(STUDENT_ID, workingPlanId,
       ({ courses: refreshed }) => setCourses(refreshed),
-      error => setContextError(error.message || "Could not refresh planning context."));
+      error => setContextError(error.message || "Could not refresh planning context."), planningRequest?.request_id);
     return () => contextLoader.current.invalidate();
-  }, [loading, student, workingPlanId, selectionRevision]);
+  }, [loading, student, workingPlanId, planningRequest?.request_id, selectionRevision]);
 
   const completedCodes = useMemo(
     () => new Set(student?.completed_courses || []),
@@ -318,10 +317,6 @@ function App() {
   );
 
   const targetAu = Number(planningRequest?.target_au) || 15;
-
-  const years = [
-    ...new Set(courses.map((course) => course.academic_year)),
-  ];
 
   const auValues = [
     ...new Set([
@@ -341,16 +336,19 @@ function App() {
           `${course.course_code} ${course.course_name}`
             .toLowerCase()
             .includes(search)) &&
-        (academicYear === "All years" ||
-          course.academic_year === academicYear) &&
-        (semester === "All semesters" ||
-          String(course.semester) === semester) &&
         (au === "All AU values" ||
           Number(course.au) === Number(au)) &&
         (courseType === "All course types" ||
           course.course_types?.includes(courseType))
     );
-  }, [courses, query, academicYear, semester, au, courseType]);
+  }, [courses, query, au, courseType]);
+
+  const cannotAdd = course => course.available_for_planning_term === false ||
+    (planningRequest != null && (course.planning_term == null ||
+      course.planning_term.academic_year !== planningRequest.academic_year ||
+      Number(course.planning_term.semester) !== Number(planningRequest.semester))) ||
+    course.eligibility == null || course.eligibility.can_select === false ||
+    completedCodes.has(course.course_code);
 
   // Course Explorer and My Planner share backend selections.
   const changeCourse = async (code, removing = false) => {
@@ -438,6 +436,7 @@ function App() {
 
   const toggleCourse = async (course) => {
     const removing = selectedCodes.includes(course.course_code);
+    if (!removing && cannotAdd(course)) return;
 
     if (
       !removing &&
@@ -468,8 +467,6 @@ function App() {
 
   const clearFilters = () => {
     setQuery("");
-    setAcademicYear("All years");
-    setSemester("All semesters");
     setAu("All AU values");
     setCourseType("All course types");
   };
@@ -482,7 +479,7 @@ function App() {
     setDetailLoading(true);
 
     try {
-      const detail = await api.course(course.course_code, workingPlanId);
+      const detail = await api.course(course.course_code, workingPlanId, planningRequest?.request_id);
 
       const indexes = await Promise.all(
         detail.indexes.map(async (index) => {
@@ -721,38 +718,6 @@ function App() {
                     </label>
 
                     <label>
-                      <span>Academic year</span>
-                      <select
-                        value={academicYear}
-                        onChange={(event) =>
-                          setAcademicYear(event.target.value)
-                        }
-                      >
-                        <option>All years</option>
-                        {years.map((value) => (
-                          <option key={value}>{value}</option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <label>
-                      <span>Semester</span>
-                      <select
-                        value={semester}
-                        onChange={(event) =>
-                          setSemester(event.target.value)
-                        }
-                      >
-                        <option>All semesters</option>
-                        {[1, 2, 3].map((value) => (
-                          <option key={value} value={value}>
-                            Semester {value}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <label>
                       <span>Academic units</span>
                       <select
                         value={au}
@@ -845,8 +810,9 @@ function App() {
                             <h2>{course.course_name}</h2>
 
                             <p className="description">
-                              AY {displayYear(course.academic_year)} ·
-                              Semester {course.semester} ·{" "}
+                              {course.available_semesters?.length
+                                ? course.available_semesters.map(term => `AY ${displayYear(term.academic_year)} Semester ${term.semester}`).join("; ")
+                                : `AY ${displayYear(course.academic_year)} Semester ${course.semester}`} ·{" "}
                               {course.grading_type}
                             </p>
 
@@ -878,6 +844,7 @@ function App() {
                               {eligibilityText({ ...course, status })}
                             </p>
 
+                            {availabilityMessage(course) && <p className="availability warning">{availabilityMessage(course)}</p>}
                             <div className="card-actions">
                               <button
                                 className="detail-link"
@@ -892,7 +859,7 @@ function App() {
                                   status === "planned" ? "selected" : ""
                                 }`}
                                 type="button"
-                                disabled={savingCourse}
+                                disabled={savingCourse || (status !== "planned" && cannotAdd(course))}
                                 onClick={() => toggleCourse(course)}
                               >
                                 {status === "planned" ? (
@@ -901,6 +868,8 @@ function App() {
                                   </>
                                 ) : status === "completed" ? (
                                   "Completed"
+                                ) : course.available_for_planning_term === false ? (
+                                  "Not offered this term"
                                 ) : blocked ? (
                                   "Not eligible"
                                 ) : (
@@ -1108,6 +1077,7 @@ function App() {
             </p>
 
             <h3>Available indexes</h3>
+            {availabilityMessage(activeCourse) && <p className="availability warning">{availabilityMessage(activeCourse)}</p>}
 
             {detailLoading ? (
               <div className="index-empty">
@@ -1126,6 +1096,7 @@ function App() {
                   >
                     <strong>
                       Index {index.index_no} · {index.vacancy} vacancies
+                      {index.academic_year && ` · AY ${displayYear(index.academic_year)} Semester ${index.semester}`}
                     </strong>
 
                     {index.slots.length ? (
@@ -1153,13 +1124,15 @@ function App() {
                   : ""
               }`}
               type="button"
-              disabled={savingCourse}
+              disabled={savingCourse || (!selectedCodes.includes(activeCourse.course_code) && cannotAdd(activeCourse))}
               onClick={() => toggleCourse(activeCourse)}
             >
               {selectedCodes.includes(activeCourse.course_code)
                 ? "Remove from semester"
                 : completedCodes.has(activeCourse.course_code)
                 ? "Credit already recorded"
+                : activeCourse.available_for_planning_term === false
+                ? "Not offered this term"
                 : activeCourse.eligibility?.can_select === false
                 ? "Not eligible"
                 : "Add to semester"}

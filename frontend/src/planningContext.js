@@ -20,10 +20,10 @@ export function createPlanningContextLoader(api) {
   const latest = createLatestRequest();
   return {
     invalidate: latest.invalidate,
-    load(studentId, planId, onData, onError) {
+    load(studentId, planId, onData, onError, requestId = null) {
       return latest.load(async () => {
         const [courses, curriculum] = await Promise.all([
-          api.courses(planId),
+          api.courses(planId, requestId),
           api.curriculum(studentId, planId).catch(error => {
             if (['NO_CURRICULUM', 'AMBIGUOUS_CURRICULUM'].includes(error.details?.code)) return null;
             throw error;

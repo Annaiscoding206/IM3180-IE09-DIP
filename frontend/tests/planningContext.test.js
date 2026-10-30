@@ -8,19 +8,22 @@ test('API helpers send plan_id consistently and omit it for academic-only reads'
   const paths = [];
   t.mock.method(globalThis, 'fetch', async path => { paths.push(path); return Response.json({ success: true, data: [] }); });
   await api.courses(4); await api.course('IE1005',4); await api.curriculum('S',4); await api.eligibility('S','IE1005',4); await api.curriculum('S');
-  assert.deepEqual(paths, ['/api/courses?plan_id=4','/api/courses/IE1005?plan_id=4','/api/students/S/curriculum?plan_id=4','/api/students/S/eligibility/IE1005?plan_id=4','/api/students/S/curriculum']);
+  await api.courses(null, 8); await api.course('IE1005', null, 8);
+  assert.deepEqual(paths, ['/api/courses?plan_id=4','/api/courses/IE1005?plan_id=4','/api/students/S/curriculum?plan_id=4','/api/students/S/eligibility/IE1005?plan_id=4','/api/students/S/curriculum','/api/courses?planning_request_id=8','/api/courses/IE1005?planning_request_id=8']);
 });
 test('switching plan refreshes status/eligibility; slower old results cannot overwrite it', async () => {
   const old = deferred(), results = [], errors = [], calls = [];
   const loader = createPlanningContextLoader({
-    courses: async plan => { calls.push(plan); return plan === 1 ? old.promise : [{ course_code:'X' }]; },
+    courses: async plan => { calls.push(plan); return plan === 1 ? old.promise : [{ course_code:'X', available_for_planning_term: false, planning_term: {semester:2} }]; },
     curriculum: async (_, plan) => ({ courses:[{ course_code:'X', status:plan === 1 ? 'PLANNED':'NOT_YET_TAKEN', eligibility:{ eligible:plan === 1 } }] }),
   });
   const pending = loader.load('S',1,x=>results.push(x),e=>errors.push(e));
   await loader.load('S',2,x=>results.push(x),e=>errors.push(e));
-  old.resolve([{ course_code:'X' }]); await pending;
+  old.resolve([{ course_code:'X', available_for_planning_term: true, planning_term: {semester:1} }]); await pending;
   assert.deepEqual(calls,[1,2]); assert.equal(results.length,1); assert.equal(errors.length,0);
   assert.equal(results[0].courses[0].curriculum_status,'NOT_YET_TAKEN'); assert.equal(results[0].courses[0].eligibility.eligible,false);
+  assert.equal(results[0].courses[0].available_for_planning_term, false);
+  assert.equal(results[0].courses[0].planning_term.semester, 2);
 });
 test('selection mutation invalidates same-plan pending responses and old errors', async () => {
   const old = deferred(), results=[], errors=[];

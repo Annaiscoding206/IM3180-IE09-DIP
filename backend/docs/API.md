@@ -251,3 +251,43 @@ GENERATE REQUEST 10 FROM PLAN 21
 `FROM PLAN` is optional when no source lock choice is needed. For a locked source, use this command after saving, rather than `AND GENERATE` without a source. Generated summaries include rank/score/metrics/indexes, and structured `planning_result.generation.plans` also includes all sessions and validation. Model interpretation requires OpenAI; recognized commands bypass the model. No command auto-selects a final plan.
 
 See [Leo integration](../../docs/LEO_PREFERENCE_INTEGRATION.md) for tools, tests and limitations. The backend does not implement exam-clash checks, official registration, NTU authentication/import, or an official curriculum audit.
+
+## Catalogue availability and planning terms
+
+`GET /api/courses` without `academic_year`/`semester` filters returns the full
+catalogue, one row per course code. Explicit search/AU/year/semester filters
+remain supported. Each row includes:
+
+```json
+{
+  "available_semesters": [
+    { "academic_year": "2026-2027", "semester": 1 },
+    { "academic_year": "2026-2027", "semester": 2 }
+  ],
+  "planning_term": { "academic_year": "2026-2027", "semester": 1 },
+  "available_for_planning_term": true
+}
+```
+
+Use `?plan_id=...` for an owned independent plan. Before a plan exists, use
+`?planning_request_id=...` for the owned request's **term only**. This does not
+provide legacy request selections to eligibility or Curriculum. If both IDs
+are supplied they must belong together. The existing `request_id` parameter
+still requires `plan_id` for selection-dependent academic context.
+
+Without either context, `planning_term` and `available_for_planning_term` are
+null. Availability comes from `course_info`; it is independent of academic
+`eligible`/`can_select`. A course lacking an offering remains in the response.
+Representative course metadata uses the matching planning-term row when present,
+otherwise the latest returned offering. `available_semesters` lists all stored
+terms even when an explicit catalogue filter is used.
+
+`GET /api/courses/:courseCode` accepts the same context and returns these fields;
+each detail index includes `academic_year` and `semester`. All detail indexes
+remain visible. Assignment and generation enforce the request term separately.
+
+Both `POST /api/plans/:planId/selected-courses` and the legacy
+`POST /api/plans/:requestId/courses` retain their academic checks and reject
+unavailable offerings with HTTP 422, `code: COURSE_NOT_AVAILABLE_IN_TERM`,
+`course_code`, `academic_year`, and `semester`. Missing academic prerequisites
+or other academic failures may be reported first, as before.

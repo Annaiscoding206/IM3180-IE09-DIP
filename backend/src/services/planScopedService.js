@@ -164,7 +164,9 @@ function addSelectedCourse(planId, studentId, inputCode) {
     if (!offerings.length) {
       throw new PlanningError(
         422,
-        "Course is not offered in this planning term"
+        "Course is not offered in this planning term",
+        { code: "COURSE_NOT_AVAILABLE_IN_TERM", course_code: code,
+          academic_year: plan.academic_year, semester: plan.semester }
       );
     }
 
