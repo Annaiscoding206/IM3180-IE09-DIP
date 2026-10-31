@@ -103,13 +103,15 @@ sample evidence as a unique root cause or promise a remedy will be feasible.
 ## Website and Telegram
 
 Both channels call `askSmartStars` and persist through `conversationService`.
-`ai_active_conversation` holds the shared active conversation for DEMO001;
+`ai_active_conversation` holds a separate shared active conversation per student;
 messages retain website/Telegram provenance. Draft tokens survive reloads and
 channel switches. A foreign conversation cannot be read or used to save a draft.
 
 The website uses the local demo middleware. The Telegram bot maps only the
-configured allowlisted sender to DEMO001. No student identity is accepted from a
-message or model-generated argument. See [setup](SETUP.md) for flags and tokens.
+configured allowlisted sender to the validated `DEMO_PLANNING_STUDENT_ID`, using
+the same resolver as planning and website chat. No student identity is accepted
+from a message or model-generated argument. See [active demo identity](ACTIVE_DEMO_IDENTITY.md)
+for switching modes, and [setup](SETUP.md) for flags and tokens.
 
 ## Verification and limits
 

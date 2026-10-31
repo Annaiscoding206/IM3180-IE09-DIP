@@ -70,7 +70,7 @@ const sendChatMessage = async (req, res) => {
     // Enable shared memory only for the local demo.
     const isLocalDemo =
       res.locals.isLocalDemoChat === true &&
-      studentId === "DEMO001";
+      Boolean(studentId);
 
     let activeService = null;
     let effectiveConversationId = conversationId;

@@ -69,28 +69,30 @@ test("adjacent classes and different weekdays do not overlap blocks", () => {
   assert.throws(() => findBlockedPeriodConflicts([{ ...block, start_time: null }], [block]));
 });
 
-test("identity uses trusted context or explicit local demo opt-in, never client student IDs", () => {
-  const saved = { demo: process.env.DEMO_PLANNING_ENABLED, env: process.env.NODE_ENV };
-  function run({ student, address = "127.0.0.1", origin } = {}) {
+test("identity uses trusted context or explicit local demo opt-in, never client student IDs", async t => {
+  t.mock.method(require("../src/config/db"), "query", async (sql, [id]) => [[{ student_id: id }]]);
+  const saved = { demo: process.env.DEMO_PLANNING_ENABLED, env: process.env.NODE_ENV, student: process.env.DEMO_PLANNING_STUDENT_ID };
+  delete process.env.DEMO_PLANNING_STUDENT_ID;
+  async function run({ student, address = "127.0.0.1", origin } = {}) {
     const req = { socket: { remoteAddress: address }, headers: { origin, "x-student-id": "VICTIM" },
       body: { student_id: "VICTIM" }, query: { student_id: "VICTIM" } };
     const res = { locals: { authenticatedStudentId: student }, status(n) { this.code = n; return this; }, json(body) { this.body = body; return this; } };
-    planningIdentity(req, res, () => { res.next = true; });
+    await planningIdentity(req, res, () => { res.next = true; });
     return res;
   }
   try {
     process.env.NODE_ENV = "test";
     delete process.env.DEMO_PLANNING_ENABLED;
-    assert.equal(run().code, 401);
-    assert.equal(run({ student: "TRUSTED" }).next, true);
+    assert.equal((await run()).code, 401);
+    assert.equal((await run({ student: "TRUSTED" })).next, true);
     process.env.DEMO_PLANNING_ENABLED = "true";
-    assert.equal(run().locals.authenticatedStudentId, "DEMO001");
-    assert.equal(run({ address: "192.0.2.1" }).code, 401);
-    assert.equal(run({ origin: "https://untrusted.example" }).code, 403);
+    assert.equal((await run()).locals.authenticatedStudentId, "DEMO001");
+    assert.equal((await run({ address: "192.0.2.1" })).code, 401);
+    assert.equal((await run({ origin: "https://untrusted.example" })).code, 403);
     process.env.NODE_ENV = "production";
-    assert.equal(run().code, 401);
+    assert.equal((await run()).code, 401);
   } finally {
-    for (const [key, value] of [["DEMO_PLANNING_ENABLED", saved.demo], ["NODE_ENV", saved.env]]) {
+    for (const [key, value] of [["DEMO_PLANNING_ENABLED", saved.demo], ["NODE_ENV", saved.env], ["DEMO_PLANNING_STUDENT_ID", saved.student]]) {
       if (value === undefined) delete process.env[key]; else process.env[key] = value;
     }
   }

@@ -13,6 +13,12 @@ const { planningIdentity } = require("../middleware/planningIdentity");
 // Require an authenticated student for every student API.
 router.use(planningIdentity);
 
+// Bootstrap identity comes only from trusted middleware, never a client selector.
+// Register before /:studentId so "current" is not interpreted as an ID.
+router.get("/current", (req, res) => res.json({
+  success: true, data: { student_id: res.locals.authenticatedStudentId }
+}));
+
 // Ensure the requested student matches the authenticated identity.
 router.param("studentId", (req, res, next, studentId) => {
   const authenticatedStudentId = res.locals.authenticatedStudentId;

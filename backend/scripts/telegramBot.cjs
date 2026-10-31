@@ -10,7 +10,7 @@ const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const APPROVED_TELEGRAM_USER_ID =
   process.env.TELEGRAM_DEMO_USER_ID?.trim();
 
-const DEMO_STUDENT_ID = "DEMO001";
+const { resolveDemoStudentId } = require("../src/middleware/planningIdentity");
 // Store the last processed Telegram update on the local machine.
 const OFFSET_FILE = path.join(
   __dirname,
@@ -188,9 +188,14 @@ async function handleMessage(message) {
     String(telegramUserId) === APPROVED_TELEGRAM_USER_ID;
 
   // Only the approved account gets the demo student context.
-  const studentId = isApprovedUser
-    ? DEMO_STUDENT_ID
-    : null;
+  let studentId = null;
+  if (isApprovedUser) {
+    try { studentId = await resolveDemoStudentId(); }
+    catch {
+      await sendMessage(chatId, "Active demo student is unavailable. Please check the server configuration.");
+      return;
+    }
+  }
 
   // Step 16.1 — Show the sender's Telegram User ID.
   // The ID comes from Telegram metadata, not message text.
@@ -312,7 +317,7 @@ async function handleMessage(message) {
 
     // 1. Load the active conversation from MySQL.
     const conversationId =
-      studentId === DEMO_STUDENT_ID
+      studentId !== null
         ? await getActiveConversationId({ studentId })
         : null;
 
@@ -325,7 +330,7 @@ async function handleMessage(message) {
     });
 
     // 3. Save the active conversation in MySQL.
-    if (studentId === DEMO_STUDENT_ID) {
+    if (studentId !== null) {
       if (!Number.isSafeInteger(result.conversation_id)) {
         throw new Error("Invalid AI conversation ID.");
       }

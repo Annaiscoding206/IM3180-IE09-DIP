@@ -11,12 +11,15 @@ async function applyMigration(pool) {
   finally { db.release(); }
 }
 
-async function seedDemoCurriculum(pool, seed) {
+// A caller-supplied connection belongs to an existing setup transaction.
+async function seedDemoCurriculum(pool, seed, connection = null) {
   const { writeAcademicProfile } = require("../src/services/studentProfileService");
-  const db = await pool.getConnection();
+  const db = connection || await pool.getConnection();
   try {
-    await db.query("SET TRANSACTION ISOLATION LEVEL READ COMMITTED");
-    await db.beginTransaction();
+    if (!connection) {
+      await db.query("SET TRANSACTION ISOLATION LEVEL READ COMMITTED");
+      await db.beginTransaction();
+    }
     const c = seed.curriculum;
     const [students] = await db.query(`SELECT student_id, programme, admission_year, admission_route FROM student
       WHERE student_id = ? OR (programme = ? AND admission_year = ? AND (admission_route = ? OR ? IS NULL))
@@ -61,11 +64,11 @@ async function seedDemoCurriculum(pool, seed) {
       changed++;
     }
     if (changed) for (const r of requests) await invalidateRequestPlans(db, r.request_id);
-    await db.commit();
+    if (!connection) await db.commit();
     return { curriculum_id, curriculum_key: c.curriculum_key, changed_rows: changed,
       invalidated_request_ids: changed ? requests.map(r => r.request_id) : [] };
-  } catch (error) { await db.rollback(); throw error; }
-  finally { db.release(); }
+  } catch (error) { if (!connection) await db.rollback(); throw error; }
+  finally { if (!connection) db.release(); }
 }
 
 if (require.main === module) {

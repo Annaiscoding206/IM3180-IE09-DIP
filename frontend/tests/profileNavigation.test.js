@@ -92,7 +92,9 @@ function fixtureApi(t, { noPlan = false, requestWithoutPlan = false, failInitial
     const url = new URL(path, 'http://localhost');
     let data;
 
-    if (url.pathname === '/api/students/DEMO001') {
+    if (url.pathname === '/api/students/current') {
+      data = { student_id: 'DEMO001' };
+    } else if (url.pathname === '/api/students/DEMO001') {
       data = {
         student_id: 'DEMO001',
         student_name: 'Sam Tan',
@@ -407,6 +409,7 @@ test(
 
     t.mock.method(globalThis, 'fetch', async path => {
       calls.push(path);
+      if (path === '/api/students/current') return Response.json({ success: true, data: { student_id: 'DEMO001' } });
 
       return Response.json(
         {
@@ -419,9 +422,13 @@ test(
 
     await mount();
 
+    for (let i = 0; i < 40 && !document.body.textContent.includes('Export plan unavailable'); i++) await flush();
     assert.ok(
       calls.length > 0 &&
-      calls.every(path => path === '/api/plans/7/summary')
+      calls.includes('/api/students/current') &&
+      calls.includes('/api/plans/7/summary') &&
+      calls.every(path => ['/api/students/current', '/api/plans/7/summary'].includes(path)),
+      JSON.stringify(calls)
     );
 
     assert.equal(

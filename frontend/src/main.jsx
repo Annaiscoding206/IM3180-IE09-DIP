@@ -10,8 +10,6 @@ import ChatWidget from "./components/ChatWidget";
 import ExportPlan from "./ExportPlan";
 import StudentProfile from "./StudentProfile";
 
-const STUDENT_ID = "DEMO001";
-
 const statusLabels = {
   completed: "Completed",
   planned: "Planned",
@@ -144,7 +142,7 @@ const choosePlannerPlan = (plans, preferredId = null) => {
   return preferred || latestGeneratedA || available[0] || null;
 };
 
-function App() {
+function App({ studentId }) {
   const [theme, setTheme] = useState(() =>
     document.documentElement.dataset.theme === "dark"
       ? "dark"
@@ -163,7 +161,7 @@ function App() {
   workingPlanRef.current = workingPlanId;
   const detailGeneration = useRef(0);
   // Invalidate immediately during a context render, before effects run.
-  const nextContextKey = `${workingPlanId}:${planningRequest?.request_id}:${selectionRevision}`;
+  const nextContextKey = `${studentId}:${workingPlanId}:${planningRequest?.request_id}:${selectionRevision}`;
   if (contextKey.current !== nextContextKey) {
     contextLoader.current.invalidate();
     contextKey.current = nextContextKey;
@@ -210,9 +208,9 @@ function App() {
       try {
         const [studentData, courseData, requests] =
           await Promise.all([
-            api.student(STUDENT_ID),
+            api.student(studentId),
             api.courses(),
-            api.planningRequests(STUDENT_ID),
+            api.planningRequests(studentId),
           ]);
 
         const now = new Date();
@@ -287,7 +285,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [loadRevision]);
+  }, [studentId, loadRevision]);
 
   useEffect(() => {
     if (loading || !student) return;
@@ -296,11 +294,11 @@ function App() {
     detailGeneration.current++;
     setActiveCourse(null);
     setContextError("");
-    contextLoader.current.load(STUDENT_ID, workingPlanId,
+    contextLoader.current.load(studentId, workingPlanId,
       ({ courses: refreshed }) => setCourses(refreshed),
       error => setContextError(error.message || "Could not refresh planning context."), planningRequest?.request_id);
     return () => contextLoader.current.invalidate();
-  }, [loading, student, workingPlanId, planningRequest?.request_id, selectionRevision]);
+  }, [studentId, loading, student, workingPlanId, planningRequest?.request_id, selectionRevision]);
 
   const completedCodes = useMemo(
     () => new Set(student?.completed_courses || []),
@@ -372,7 +370,7 @@ function App() {
         }
 
         const created = await api.createPlanningRequest({
-          student_id: STUDENT_ID,
+          student_id: studentId,
           academic_year: course.academic_year,
           semester: Number(course.semester),
         });
@@ -639,7 +637,7 @@ function App() {
               }
             />
           ) : page === "profile" ? (
-            <StudentProfile studentId={STUDENT_ID} workingPlanId={workingPlanId}
+            <StudentProfile studentId={studentId} workingPlanId={workingPlanId}
               selectionRevision={selectionRevision} planningLoading={loading} planningError={error}
               onRetryPlanning={() => setLoadRevision(n => n + 1)} />
           ) : (
@@ -1156,13 +1154,36 @@ const exportPlanId = new URLSearchParams(
   window.location.search
 ).get("exportPlan");
 
+// Resolve identity before mounting any student-scoped component, including Leo.
+// A keyed subtree prevents plan/profile/history state surviving an identity change.
+function IdentityBootstrap() {
+  const [identity, setIdentity] = useState(null);
+  const [error, setError] = useState("");
+  const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    setIdentity(null);
+    setError("");
+    api.currentStudent().then(current => {
+      if (typeof current?.student_id !== "string" || !current.student_id.trim()) {
+        throw new Error("The server did not provide a current student identity.");
+      }
+      if (!cancelled) setIdentity(current.student_id);
+    }).catch(failure => {
+      if (!cancelled) setError(failure.message || "Could not resolve the current student.");
+    });
+    return () => { cancelled = true; };
+  }, [revision]);
+  if (error) return <main className="workspace" role="alert">
+    <p>{error}</p><button type="button" onClick={() => setRevision(n => n + 1)}>Retry identity</button>
+  </main>;
+  if (!identity) return <main className="workspace" role="status">Loading current student…</main>;
+  return exportPlanId ? <ExportPlan key={identity} planId={exportPlanId} /> : <App key={identity} studentId={identity} />;
+}
+
 export const appRoot = createRoot(document.getElementById("root"));
 appRoot.render(
   <React.StrictMode>
-    {exportPlanId ? (
-      <ExportPlan planId={exportPlanId} />
-    ) : (
-      <App />
-    )}
+    <IdentityBootstrap />
   </React.StrictMode>
 );

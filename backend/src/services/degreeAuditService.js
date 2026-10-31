@@ -92,14 +92,17 @@ function validateDemoRecord(row) {
 
 // Internal seeded-demo importer only: no public mutation endpoint. Stable keys
 // update a known attempt, while distinct keys preserve all attempts. No deletes.
-async function importDemoRecords(studentId, records) {
+// Optional connection is internal only; the caller owns commit/rollback.
+async function importDemoRecords(studentId, records, connection = null) {
   if (!Array.isArray(records)) throw new PlanningError(400, "records must be an array");
   const normalized = records.map(validateDemoRecord);
   if (new Set(normalized.map(row => row.source_key.toLowerCase())).size !== normalized.length) throw new PlanningError(400, "Duplicate attempt keys");
-  const db = await pool.getConnection();
+  const db = connection || await pool.getConnection();
   try {
-    await db.query("SET TRANSACTION ISOLATION LEVEL READ COMMITTED");
-    await db.beginTransaction();
+    if (!connection) {
+      await db.query("SET TRANSACTION ISOLATION LEVEL READ COMMITTED");
+      await db.beginTransaction();
+    }
     // Student lock serializes imports and new planning-request FK inserts.
     // Existing request rows are locked in order BEFORE any plan writes.
     const [students] = await db.query("SELECT student_id FROM student WHERE student_id = ? FOR UPDATE", [studentId]);
@@ -117,10 +120,10 @@ async function importDemoRecords(studentId, records) {
     }
     if (changed) for (const request of requests) await invalidateRequestPlans(db, request.request_id);
     const summary = await getCompletionSummary(studentId, db);
-    await db.commit();
+    if (!connection) await db.commit();
     return { student_id: studentId, changed_records: changed, invalidated_request_ids: changed ? requests.map(r => r.request_id) : [], summary };
-  } catch (error) { await db.rollback(); throw error; }
-  finally { db.release(); }
+  } catch (error) { if (!connection) await db.rollback(); throw error; }
+  finally { if (!connection) db.release(); }
 }
 
 module.exports = { passedCourseCredits, readRecords, summarizeRecords, getCompletionSummary, getDegreeAudit, importDemoRecords, validateDemoRecord };

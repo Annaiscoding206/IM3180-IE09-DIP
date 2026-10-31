@@ -8,7 +8,15 @@ Most successful operations return `{ "success": true, "data": ... }`; list endpo
 
 Each independent plan owns selected **course codes** in `plan_selected_course`, blocked periods in `plan_blocked_period`, and chosen **course/index pairs** in `plan_course`. Selection does not require an index. `request_id` and `plan_id` are never interchangeable. `planning_request_course` and `/plans/:requestId/courses` remain legacy request/bulk interfaces; their writes can mirror changes into nonarchived child plans. Request-level block writes are also legacy/bulk behavior. Updated frontend and Leo selection flows use plan-scoped selections, blocks and regeneration; callers must not use legacy writes to edit a single plan.
 
-Planning, Degree Audit and curriculum operations require a trusted server-side `res.locals.authenticatedStudentId`. For this local prototype, `DEMO_PLANNING_ENABLED=true`, a loopback connection, non-production mode and a permitted local Origin resolve that identity to `DEMO001`. A supplied body/query `student_id` is a scope check, never authentication. Root request create/list must match this identity (404 otherwise); foreign request/plan resources return 404. No browser identity header is accepted.
+Planning, Degree Audit and curriculum operations require a trusted server-side `res.locals.authenticatedStudentId`. For this local prototype, `DEMO_PLANNING_ENABLED=true`, a loopback connection, non-production mode and a permitted local Origin resolve the server-configured `DEMO_PLANNING_STUDENT_ID` (default `DEMO001`). Only `DEMO001` and `DEMO002` are allowed, and the configured student must exist. Invalid/empty configuration or lookup failure returns 503 `DEMO_IDENTITY_UNAVAILABLE`; it never falls back to another student. A supplied body/query `student_id` is a scope check, never authentication. Root request create/list must match this identity (404 otherwise); foreign request/plan resources return 404. No browser identity header is accepted.
+
+`GET /api/students/current` uses the same identity middleware and returns
+`{"success":true,"data":{"student_id":"DEMO002"}}` for that configured mode.
+Query parameters cannot choose the identity. The browser resolves this before
+mounting Explorer, Planner, Profile, export or Leo. Website chat (with
+`DEMO_CHAT_ENABLED=true`) and the allowlisted Telegram sender reuse the same
+validated mapping. Restart services with the same setting and reload the browser
+when switching modes. See `docs/ACTIVE_DEMO_IDENTITY.md`.
 
 Course catalogue reads are public; trusted/demo identity adds completion and curriculum annotations. Explicit catalogue planning context requires trusted identity. All student routes require trusted identity, with matching student scope for detail, eligibility, Degree Audit and Curriculum. Demo identity is not production authentication. Chat has a separate `DEMO_CHAT_ENABLED=true` opt-in and local-only access; see the chat section.
 

@@ -1,4 +1,4 @@
-
+const { resolveDemoStudentId } = require("./planningIdentity");
 const LOCAL_ADDRESSES = new Set([
   "127.0.0.1",
   "::1",
@@ -12,7 +12,7 @@ const ALLOWED_ORIGINS = new Set([
   "http://localhost:5001"
 ]);
 
-function localDemoChatIdentity(req, res, next) {
+async function localDemoChatIdentity(req, res, next) {
   const isDemoEnabled =
     process.env.DEMO_CHAT_ENABLED === "true";
 
@@ -35,6 +35,9 @@ function localDemoChatIdentity(req, res, next) {
     });
   }
 
+  // Preserve real server authentication; never overwrite it with a demo account.
+  if (typeof res.locals.authenticatedStudentId === "string" && res.locals.authenticatedStudentId.trim()) return next();
+
 
   // This is only a controlled local demo identity,
   // NOT real student authentication.
@@ -44,7 +47,11 @@ function localDemoChatIdentity(req, res, next) {
     isLocalRequest &&
     isAllowedOrigin
   ) {
-    res.locals.authenticatedStudentId = "DEMO001";
+    try {
+      res.locals.authenticatedStudentId = await resolveDemoStudentId();
+    } catch {
+      return res.status(503).json({ success: false, code: "DEMO_IDENTITY_UNAVAILABLE", message: "Active demo student is unavailable; check server configuration and student setup" });
+    }
     res.locals.isLocalDemoChat = true;
   }
 

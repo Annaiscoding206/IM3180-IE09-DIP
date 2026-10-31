@@ -77,6 +77,7 @@ const catalogueQuery = (planId, requestId) => planId != null ? planQuery(planId)
   : requestId != null ? `?planning_request_id=${encodeURIComponent(requestId)}` : "";
 
 export const api = {
+  currentStudent: () => request('/students/current').then(body => body.data),
   courses: (planId, requestId) => request(`/courses${catalogueQuery(planId, requestId)}`).then((body) => body.data),
   course: (code, planId, requestId) => request(`/courses/${encodeURIComponent(code)}${catalogueQuery(planId, requestId)}`).then((body) => body.data),
   timetable: (code, indexNo) => request(`/courses/${encodeURIComponent(code)}/indexes/${indexNo}/timetable`).then((body) => body.data),
