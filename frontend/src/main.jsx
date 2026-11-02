@@ -112,6 +112,7 @@ const courseStatus = (course, selectedCodes, completedCodes) => {
   return course.eligibility?.eligible ? "eligible" : "not-yet";
 };
 
+const formatGradingType = (value) => value === "LETTER_GRADED" ? "Letter Graded" : value ?? "Grading not published";
 const availabilityMessage = course => course.available_for_planning_term === false
   ? `Not offered in Semester ${course.planning_term.semester} (AY ${displayYear(course.planning_term.academic_year)})`
   : "";
@@ -811,7 +812,7 @@ function App({ studentId }) {
                               {course.available_semesters?.length
                                 ? course.available_semesters.map(term => `AY ${displayYear(term.academic_year)} Semester ${term.semester}`).join("; ")
                                 : `AY ${displayYear(course.academic_year)} Semester ${course.semester}`} ·{" "}
-                              {course.grading_type}
+                              {formatGradingType(course.grading_type)}
                             </p>
 
                             <p className="course-meta">
@@ -1015,7 +1016,7 @@ function App({ studentId }) {
 
             <p className="dialog-description">
               AY {displayYear(activeCourse.academic_year)} · Semester{" "}
-              {activeCourse.semester} · {activeCourse.grading_type}
+              {activeCourse.semester} · {formatGradingType(activeCourse.grading_type)}
             </p>
 
             <dl className="requirements">
@@ -1093,7 +1094,7 @@ function App({ studentId }) {
                     key={index.index_no}
                   >
                     <strong>
-                      Index {index.index_no} · {index.vacancy} vacancies
+                      Index {index.index_no} · {index.vacancy == null ? "Vacancy not published" : `${index.vacancy} vacancies`}
                       {index.academic_year && ` · AY ${displayYear(index.academic_year)} Semester ${index.semester}`}
                     </strong>
 

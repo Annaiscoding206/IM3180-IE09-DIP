@@ -50,6 +50,7 @@ Extension inventory / setup order:
 | `node scripts/setupCurriculum.cjs` | Also applies synthetic 11 JSON, sets explicit demo admission data, refuses to overwrite conflicting existing seed/profile values |
 | `node scripts/setupLeo.cjs` | Inspects and creates only missing AI tables from 05 chat history, 06 active conversation and 12 preference draft; prints applied/existing tables |
 | `node scripts/setupIndependentPlans.cjs` | Creates only missing extension 13 plan selection/block tables; applies extension 14 backfill once, atomically with its migration marker |
+| `node scripts/setupCatalogue.cjs` | Applies extension 15 only if grading type is not nullable, then imports the AY2026-2027 IE2108/IE2110 and six-course EEE foundation snapshots. Repeatable; enriches unspecified grading/weeks, refuses conflicts and never replaces existing rows. See [catalogue provenance](CATALOGUE_IMPORT.md). |
 
 The two different files beginning `05_` are separate extensions. Never apply all numbered SQL files blindly. SQL files can be applied with the MySQL client's `SOURCE /absolute/path/to/file.sql`; the setup commands above use `backend/.env` instead. Use the Degree Audit/Curriculum setup scripts rather than translating JSON into ad hoc SQL.
 
@@ -67,7 +68,7 @@ For a genuinely new local installation, run these **once**, in order, through My
 2. `database/02_course_data.sql`
 3. `database/03_demo_data.sql`
 
-Then apply course types (05), blocked periods (07, safe if base already includes it), Degree Audit setup (08/09), Curriculum setup (10/11), and Leo setup (05 AI/06/12) in the order above. Base schema already includes the current non-AI planning/audit/curriculum tables, but extension scripts also handle legacy-record conversion and repeatable demo population. AI tables are installed separately by `setupLeo.cjs` even for fresh databases.
+Then apply course types (05), blocked periods (07, safe if base already includes it), Degree Audit setup (08/09), Curriculum setup (10/11), Leo setup (05 AI/06/12), independent plans (13/14), and catalogue setup (15 plus the historical JSON snapshot) in the order above. Base schema already includes the current non-AI planning/audit/curriculum tables, but extension scripts also handle legacy-record conversion and repeatable demo population. AI tables are installed separately by `setupLeo.cjs` even for fresh databases.
 
 ## Start locally
 

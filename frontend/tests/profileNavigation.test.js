@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { act } from 'react';
 import { JSDOM } from 'jsdom';
 import { compileModule } from './renderModule.js';
+import { readFileSync } from 'node:fs';
 
 let loadApp, dom, appRoot;
 
@@ -442,6 +443,17 @@ test(
     );
   }
 );
+
+test('IE2108 and IE2110 render Letter Graded without automatically filtering the catalogue by term', async t => {
+  const seed = JSON.parse(readFileSync(new URL('../../database/catalogue/2026_1_ie2108_ie2110.json', import.meta.url)));
+  const api = fixtureApi(t, { courses: seed.courses.map(course => ({ ...course, academic_year: seed.academic_year, semester: seed.semester })) });
+  await mount(); await waitFor('.course-card');
+  assert.ok(![...document.querySelectorAll('.filter-panel label > span')].some(row => ['Academic year', 'Semester'].includes(row.textContent)));
+  assert.deepEqual([...document.querySelectorAll('.card-top > span:first-child')].map(row => row.textContent), ['IE2108', 'IE2110']);
+  assert.ok([...document.querySelectorAll('.course-card')].every(row => row.textContent.includes('Letter Graded') && !row.textContent.includes('Grading not published')));
+  assert.equal(document.querySelectorAll('.course-card').length, 2);
+  assert.deepEqual(api.unexpected, []);
+});
 
 for (const requestWithoutPlan of [false, true]) test(`Explorer retains unavailable courses and separates availability from eligibility (request-only=${requestWithoutPlan})`, async t => {
   const planning_term = { academic_year: '2026-2027', semester: 1 };

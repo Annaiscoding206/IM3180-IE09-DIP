@@ -39,10 +39,11 @@ CREATE TABLE course_info (
     restriction_text TEXT NULL,
     mutually_exclusive_text TEXT NULL,
 
+    -- NULL = the catalogue source does not publish a grading type.
     grading_type ENUM(
         'LETTER_GRADED',
         'PASS_FAIL'
-    ) NOT NULL,
+    ) NULL DEFAULT NULL,
 
     exam_datetime DATETIME NULL,
 
