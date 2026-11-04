@@ -100,8 +100,11 @@ test('both active demo modes isolate bootstrap, profile, catalogue, Planner and 
     const response = await fetch(`http://127.0.0.1:${server.address().port}/api${route}`, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', 'x-student-id': 'VICTIM' }, ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(15000) });
     return { status: response.status, ...await response.json() };
   };
-  for (const id of ['DEMO001', 'DEMO002']) await t.test(id + ' uses one identity across all routes and Leo', async () => {
-    process.env.DEMO_PLANNING_STUDENT_ID = id;
+  process.env.DEMO_PLANNING_STUDENT_ID = 'DEMO001';
+  for (const id of ['DEMO001', 'DEMO002', 'DEMO001']) await t.test(id + ' switch uses one identity across all routes and Leo', async () => {
+    const switched = await http('/students/current', { student_id: id });
+    assert.equal(switched.status, 200); assert.equal(switched.data.student_id, id);
+    assert.equal(switched.data.demo_switch_enabled, true);
     const own = fixtures[id], otherId = id === 'DEMO001' ? 'DEMO002' : 'DEMO001', foreign = fixtures[otherId];
     const expected = id === 'DEMO001' ? { programme: 'IEM', au: 16, passed: 5, key: 'DEMO_IEM_2024_DIRECT_V1' } : { programme: 'EEE', au: 28, passed: 12, key: 'DEMO_EEE_2025_NORMAL_V1' };
     assert.equal((await http('/students/current?student_id=' + otherId)).data.student_id, id);

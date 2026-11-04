@@ -79,6 +79,12 @@ nav { display: grid; gap: 8px; }
 .topbar div { display: flex; gap: 12px; align-items: center; font-size: 12px; }
 .topbar div span { color: var(--muted); }
 .topbar i { color: #a1afc1; font-style: normal; }
+.topbar { flex-wrap: wrap; gap: 12px; }
+.topbar .topbar-actions { flex-wrap: wrap; }
+.demo-profile-selector { display: grid; gap: 4px; color: var(--muted); font-size: 11px; }
+.demo-profile-selector select { max-width: min(290px, 70vw); padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; }
+.demo-profile-selector select:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
+.demo-switch-error { color: var(--red); padding: 12px 24px; }
 .theme-toggle { width: 84px; min-height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; color: var(--navy); background: var(--red-soft); border: 1px solid #efbdc9; padding: 0 10px; border-radius: 999px; font-size: 11px; font-weight: 800; cursor: pointer; }
 .theme-toggle .icon { width: 16px; height: 16px; color: var(--red); }
 .theme-toggle:hover { border-color: var(--red); }

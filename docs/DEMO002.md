@@ -62,7 +62,8 @@ DEMO_PLANNING_ENABLED=true DEMO_CHAT_ENABLED=true DEMO_PLANNING_STUDENT_ID=DEMO0
 ```
 
 The environment setting is server-controlled and allowlisted to DEMO001/DEMO002;
-it cannot be selected by a URL, JSON body or identity header. Existing production,
+it cannot be selected by a URL or identity header. The local demo switch endpoint
+accepts only those two existing students. Existing production,
 loopback and Origin checks still apply. Invalid or missing configured students
 fail closed. The browser discovers the identity through `GET /api/students/current`.
 
@@ -73,13 +74,14 @@ Then use the existing endpoints:
 - `GET /api/students/DEMO002/curriculum/progress`
 - `GET /api/students/DEMO002/eligibility/IE2110`
 
-Switch back with `DEMO_PLANNING_STUDENT_ID=DEMO001`. Restart the backend and reload
-the browser after changing the setting. Restart a running Telegram bot with the
-same setting too; shell environment overrides do not propagate between processes.
+Switch using Active profile in the website header. This changes the backend's
+in-memory demo identity and refreshes student-scoped UI without a page reload.
+The environment setting remains the restart default. Restart a separate Telegram
+bot with the same intended identity; in-memory choices do not propagate between processes.
 Do not change DEMO001's database identity to impersonate DEMO002. An externally
 authenticated identity still takes precedence over the local demo fallback.
 
-No profile-switching UI was added. Explorer, Planner, StudentProfile and export
+The profile selector is available only in local demo planning mode. Explorer, Planner, StudentProfile and export
 wait for identity bootstrap. The same StudentProfile component serves both users.
 Website Leo and the approved Telegram sender use the same server-side resolver.
 See [identity architecture and audit](ACTIVE_DEMO_IDENTITY.md) for security and

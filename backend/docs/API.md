@@ -11,12 +11,21 @@ Each independent plan owns selected **course codes** in `plan_selected_course`, 
 Planning, Degree Audit and curriculum operations require a trusted server-side `res.locals.authenticatedStudentId`. For this local prototype, `DEMO_PLANNING_ENABLED=true`, a loopback connection, non-production mode and a permitted local Origin resolve the server-configured `DEMO_PLANNING_STUDENT_ID` (default `DEMO001`). Only `DEMO001` and `DEMO002` are allowed, and the configured student must exist. Invalid/empty configuration or lookup failure returns 503 `DEMO_IDENTITY_UNAVAILABLE`; it never falls back to another student. A supplied body/query `student_id` is a scope check, never authentication. Root request create/list must match this identity (404 otherwise); foreign request/plan resources return 404. No browser identity header is accepted.
 
 `GET /api/students/current` uses the same identity middleware and returns
-`{"success":true,"data":{"student_id":"DEMO002"}}` for that configured mode.
+`{"success":true,"data":{"student_id":"DEMO002","demo_switch_enabled":true}}` in local demo mode.
 Query parameters cannot choose the identity. The browser resolves this before
 mounting Explorer, Planner, Profile, export or Leo. Website chat (with
 `DEMO_CHAT_ENABLED=true`) and the allowlisted Telegram sender reuse the same
-validated mapping. Restart services with the same setting and reload the browser
-when switching modes. See `docs/ACTIVE_DEMO_IDENTITY.md`.
+validated resolver. `POST /api/students/current` accepts only
+`{"student_id":"DEMO001"}` or `{"student_id":"DEMO002"}` and changes the
+current process's in-memory identity after checking student existence. It requires
+local, non-production demo planning authentication; trusted authentication alone
+does not enable switching. Invalid IDs return 400 `INVALID_DEMO_STUDENT`, missing
+students 404 `DEMO_STUDENT_NOT_FOUND`, and lookup failures 503
+`DEMO_IDENTITY_UNAVAILABLE`. A rejected switch preserves the previous identity.
+No database or environment values are written. GET/POST return the same data shape.
+The frontend remounts student-scoped components after fresh bootstrap. The choice
+affects all clients of this process, resets on restart, and does not propagate
+to a separately running Telegram bot. See `docs/ACTIVE_DEMO_IDENTITY.md`.
 
 Course catalogue reads are public; trusted/demo identity adds completion and curriculum annotations. Explicit catalogue planning context requires trusted identity. All student routes require trusted identity, with matching student scope for detail, eligibility, Degree Audit and Curriculum. Demo identity is not production authentication. Chat has a separate `DEMO_CHAT_ENABLED=true` opt-in and local-only access; see the chat section.
 

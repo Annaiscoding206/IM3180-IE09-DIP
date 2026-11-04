@@ -1,7 +1,8 @@
 # Active demo identity
 
-`DEMO_PLANNING_STUDENT_ID` is the only active demo student mapping. The default is
-DEMO001 when the variable is absent. An explicitly empty, unrecognised or
+`DEMO_PLANNING_STUDENT_ID` supplies the initial active demo student mapping. The default is
+DEMO001 when the variable is absent. The website's Active profile selector can
+override it in memory through the same resolver. An explicitly empty, unrecognised or
 non-allowlisted value is invalid. The shared resolver in planningIdentity.js
 also queries student existence on every resolution. Failure returns a safe 503
 DEMO_IDENTITY_UNAVAILABLE in HTTP middleware, without guessing another account.
@@ -14,8 +15,11 @@ DEMO_PLANNING_ENABLED=true DEMO_CHAT_ENABLED=true DEMO_PLANNING_STUDENT_ID=DEMO0
 DEMO_PLANNING_ENABLED=true DEMO_CHAT_ENABLED=true DEMO_PLANNING_STUDENT_ID=DEMO002 npm start
 ```
 
-Run one backend at a time. Stop/restart it and reload the browser when switching.
-An already-open page does not perform a live account switch. Do not run the
+Run one backend at a time. Use Active profile in the main header to switch
+without editing .env, restarting the backend or reloading the page. The choice
+is process-wide, not a browser session: other open tabs must reload to display
+the new identity. Restarting the backend resets it to the environment default.
+A separate Telegram process is not switched by the website. Do not run the
 DEMO002 setup again to switch accounts: it is independent of active identity.
 This supersedes older DEMO001-only descriptions in the general setup guide.
 
@@ -24,13 +28,23 @@ This supersedes older DEMO001-only descriptions in the general setup guide.
 1. Planning/student/catalogue middleware resolves the trusted server identity or
    the validated local demo fallback. Existing loopback, non-production and
    Origin checks remain enforced. Trusted authentication is never overwritten.
-2. `GET /api/students/current` returns `{success:true,data:{student_id:...}}`.
-   Client IDs in queries, bodies and headers cannot choose that identity.
+2. `GET /api/students/current` returns `{success:true,data:{student_id:...,demo_switch_enabled:...}}`.
+   Client IDs in queries and headers cannot choose that identity. Only
+   `POST /api/students/current` with `{student_id:"DEMO001"}` or DEMO002 changes it.
+   The endpoint requires the local demo planning identity (not merely trusted
+   authentication), verifies existence, and performs no database writes. Invalid
+   IDs return 400 INVALID_DEMO_STUDENT; missing students return 404
+   DEMO_STUDENT_NOT_FOUND. Failed switches leave the previous identity intact.
 3. The browser waits for this bootstrap before mounting student-scoped content.
    Failure shows a retry action; malformed responses never become DEMO001.
    A keyed application subtree prevents old plan/profile/chat state being reused
    if bootstrap mounts another identity. The existing async cancellation guards
    protect profile and planning responses.
+   Switching first unmounts the entire student-scoped subtree, then posts the
+   choice and repeats bootstrap. This also clears Leo history/input, planner
+   selection and profile state. Even on switch failure it rechecks the server
+   identity before mounting, and displays the failure. Unrelated theme/navigation
+   preferences remain. Export pages continue enforcing their plan's ownership.
 4. All shell student reads and request creation use the resolved ID. Course
    annotations, eligibility, profile, audit and curriculum use existing APIs;
    request and plan ownership remain server-enforced.
@@ -50,6 +64,9 @@ Website/Telegram message provenance, active conversation pointers and shared
 history are unchanged. Restart the bot with the same environment as the backend,
 for example `DEMO_PLANNING_STUDENT_ID=DEMO002 node scripts/telegramBot.cjs`.
 Do not assume a shell override applied to npm start also configures another process.
+The web selector changes only the backend process serving it. To align a separately
+running Telegram bot, restart that bot with the intended environment identity;
+its authenticated sender mapping and conversation ownership rules are unchanged.
 
 ## Repository hardcoding audit
 

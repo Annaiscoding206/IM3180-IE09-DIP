@@ -143,7 +143,7 @@ const choosePlannerPlan = (plans, preferredId = null) => {
   return preferred || latestGeneratedA || available[0] || null;
 };
 
-function App({ studentId }) {
+function App({ studentId, demoSwitchEnabled, onSwitchStudent, switchError }) {
   const [theme, setTheme] = useState(() =>
     document.documentElement.dataset.theme === "dark"
       ? "dark"
@@ -601,6 +601,15 @@ function App({ studentId }) {
             </strong>
           </div>
 
+          <div className="topbar-actions">
+          {demoSwitchEnabled && <label className="demo-profile-selector">
+            Active profile
+            <select aria-label="Active demo profile" value={studentId}
+              onChange={event => onSwitchStudent(event.target.value)}>
+              <option value="DEMO001">DEMO001 — Information Engineering and Media</option>
+              <option value="DEMO002">DEMO002 — Electrical and Electronic Engineering</option>
+            </select>
+          </label>}
           <button
             className="theme-toggle"
             type="button"
@@ -617,9 +626,11 @@ function App({ studentId }) {
             <Icon name={theme === "dark" ? "sun" : "moon"} />
             <span>{theme === "dark" ? "Day" : "Night"}</span>
           </button>
+          </div>
         </header>
 
         <main id="main">
+          {switchError && <p role="alert" className="demo-switch-error">{switchError}</p>}
           {page === "planner" ? (
             <Planner
               planningRequest={planningRequest}
@@ -1159,6 +1170,10 @@ const exportPlanId = new URLSearchParams(
 // A keyed subtree prevents plan/profile/history state surviving an identity change.
 function IdentityBootstrap() {
   const [identity, setIdentity] = useState(null);
+  const [demoSwitchEnabled, setDemoSwitchEnabled] = useState(false);
+  const [switchError, setSwitchError] = useState("");
+  const [switching, setSwitching] = useState(false);
+  const switchInFlight = useRef(false);
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
   useEffect(() => {
@@ -1169,17 +1184,37 @@ function IdentityBootstrap() {
       if (typeof current?.student_id !== "string" || !current.student_id.trim()) {
         throw new Error("The server did not provide a current student identity.");
       }
-      if (!cancelled) setIdentity(current.student_id);
+      if (!cancelled) {
+        setDemoSwitchEnabled(current.demo_switch_enabled === true);
+        setIdentity(current.student_id);
+      }
     }).catch(failure => {
       if (!cancelled) setError(failure.message || "Could not resolve the current student.");
     });
     return () => { cancelled = true; };
   }, [revision]);
+  const switchStudent = async studentId => {
+    if (switchInFlight.current || !demoSwitchEnabled || studentId === identity) return;
+    switchInFlight.current = true;
+    // Unmount all student-scoped state before the server identity changes.
+    setIdentity(null);
+    setSwitching(true);
+    setSwitchError("");
+    try { await api.switchCurrentStudent(studentId); }
+    catch (failure) { setSwitchError(failure.message || "Could not switch demo profile."); }
+    finally {
+      switchInFlight.current = false;
+      setSwitching(false);
+      // Even after a network failure, discover the actual server identity.
+      setRevision(n => n + 1);
+    }
+  };
   if (error) return <main className="workspace" role="alert">
     <p>{error}</p><button type="button" onClick={() => setRevision(n => n + 1)}>Retry identity</button>
   </main>;
-  if (!identity) return <main className="workspace" role="status">Loading current student…</main>;
-  return exportPlanId ? <ExportPlan key={identity} planId={exportPlanId} /> : <App key={identity} studentId={identity} />;
+  if (!identity) return <main className="workspace" role="status">{switching ? "Switching demo profile…" : "Loading current student…"}</main>;
+  return exportPlanId ? <ExportPlan key={identity} planId={exportPlanId} /> : <App key={identity} studentId={identity}
+    demoSwitchEnabled={demoSwitchEnabled} onSwitchStudent={switchStudent} switchError={switchError} />;
 }
 
 export const appRoot = createRoot(document.getElementById("root"));

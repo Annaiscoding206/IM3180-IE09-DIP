@@ -1,13 +1,26 @@
 const LOCAL = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
+const { PlanningError } = require("../services/planningError");
+const DEMO_STUDENTS = new Set(["DEMO001", "DEMO002"]);
+let activeDemoStudentId;
+
+async function validateDemoStudent(studentId, db) {
+  if (!DEMO_STUDENTS.has(studentId)) throw new PlanningError(400, "Choose DEMO001 or DEMO002", { code: "INVALID_DEMO_STUDENT" });
+  const [students] = await db.query("SELECT student_id FROM student WHERE student_id = ?", [studentId]);
+  if (students.length !== 1) throw new PlanningError(404, "Demo student has not been set up", { code: "DEMO_STUDENT_NOT_FOUND" });
+  return students[0].student_id;
+}
 
 // One server-controlled demo mapping for planning, website Leo and Telegram.
 // Resolve on every request so a missing student never becomes an anonymous user.
 async function resolveDemoStudentId(db = require("../config/db")) {
-  const studentId = process.env.DEMO_PLANNING_STUDENT_ID ?? "DEMO001";
-  if (!["DEMO001", "DEMO002"].includes(studentId)) throw new Error("Invalid active demo student configuration");
-  const [students] = await db.query("SELECT student_id FROM student WHERE student_id = ?", [studentId]);
-  if (students.length !== 1) throw new Error("Configured demo student does not exist");
-  return students[0].student_id;
+  return validateDemoStudent(activeDemoStudentId ?? process.env.DEMO_PLANNING_STUDENT_ID ?? "DEMO001", db);
+}
+
+// Called only after local demo planning authentication. No database writes.
+async function switchDemoStudentId(studentId, db = require("../config/db")) {
+  const validated = await validateDemoStudent(studentId, db);
+  activeDemoStudentId = validated;
+  return validated;
 }
 
 async function resolveIdentity(req, res, next, optional) {
@@ -25,6 +38,7 @@ async function resolveIdentity(req, res, next, optional) {
   if (process.env.DEMO_PLANNING_ENABLED === "true" && process.env.NODE_ENV !== "production" && LOCAL.has(req.socket.remoteAddress)) {
     try {
       res.locals.authenticatedStudentId = await resolveDemoStudentId();
+      res.locals.isLocalDemoPlanning = true;
     } catch {
       return res.status(503).json({ success: false, code: "DEMO_IDENTITY_UNAVAILABLE", message: "Active demo student is unavailable; check server configuration and student setup" });
     }
@@ -38,4 +52,4 @@ const planningIdentity = (req, res, next) => resolveIdentity(req, res, next, fal
 // Public catalogue remains available anonymously; completion annotations are
 // added only for an existing trusted identity or the same opt-in local demo.
 const optionalPlanningIdentity = (req, res, next) => resolveIdentity(req, res, next, true);
-module.exports = { planningIdentity, optionalPlanningIdentity, resolveDemoStudentId };
+module.exports = { planningIdentity, optionalPlanningIdentity, resolveDemoStudentId, switchDemoStudentId };
