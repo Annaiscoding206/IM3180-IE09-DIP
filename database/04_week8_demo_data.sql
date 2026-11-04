@@ -63,7 +63,7 @@ SELECT
     '08:30:00',
     '10:20:00',
     'LT20',
-    NULL
+    '1-13'
 WHERE @add_mh1811_demo_slots = 1;
 
 INSERT INTO class_slots (
@@ -86,7 +86,7 @@ SELECT
     '12:30:00',
     '13:20:00',
     'TR+111',
-    NULL
+    '1-13'
 WHERE @add_mh1811_demo_slots = 1;
 
 COMMIT;

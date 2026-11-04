@@ -85,7 +85,7 @@ SELECT
     end_time,
     venue,
 
-    NULL AS teaching_weeks
+    '1-13' AS teaching_weeks
 
 FROM courses.class_slots;
 

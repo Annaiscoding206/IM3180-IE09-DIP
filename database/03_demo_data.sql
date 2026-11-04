@@ -150,7 +150,8 @@ INSERT INTO class_slots (
     day_of_week,
     start_time,
     end_time,
-    venue
+    venue,
+    teaching_weeks
 )
 
 VALUES
@@ -162,7 +163,8 @@ VALUES
     'MON',
     '08:30:00', 
     '10:30:00',
-    'LT1'
+    'LT1',
+    '1-13'
 ),
 
 (
@@ -172,7 +174,8 @@ VALUES
     'WED',
     '10:30:00',
     '11:30:00',
-    'TR1'
+    'TR1',
+    '1-13'
 ),
 
 (
@@ -182,5 +185,6 @@ VALUES
     'TUE',
     '12:30:00',
     '14:30:00',
-    'LT2'
+    'LT2',
+    '1-13'
 );
