@@ -6,7 +6,9 @@ const assert = require('node:assert/strict');
 const snapshot = require('../../database/catalogue/2026_1_ie2108_ie2110.json');
 const snapshots = [snapshot,
   require('../../database/catalogue/2026_1_eee_foundation.json'),
-  require('../../database/catalogue/2026_2_eee_foundation.json')];
+  require('../../database/catalogue/2026_2_eee_foundation.json'),
+  require('../../database/catalogue/2026_1_eee_core.json'),
+  require('../../database/catalogue/2026_2_eee_core.json')];
 const days = [null, 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 const types = { LEC: 'LECTURE', TUT: 'TUTORIAL', LAB: 'LAB', SEM: 'SEMINAR', STUDIO: 'STUDIO' };
 const slotFields = ['class_type', 'class_group', 'day_of_week', 'start_time', 'end_time', 'venue', 'teaching_weeks'];

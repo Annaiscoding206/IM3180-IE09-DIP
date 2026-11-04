@@ -3,7 +3,8 @@
 Run `cd backend && node scripts/setupCatalogue.cjs` after the existing setup
 extensions. This imports the explicit snapshot bundle: the existing
 `database/catalogue/2026_1_ie2108_ie2110.json` plus
-`2026_1_eee_foundation.json` and `2026_2_eee_foundation.json` in that directory,
+`2026_1_eee_foundation.json`, `2026_2_eee_foundation.json`,
+`2026_1_eee_core.json` and `2026_2_eee_core.json` in that directory,
 without rerunning the original course SQL dump. The importer is offline;
 reruns do not silently switch to NTUMods' latest semester.
 
@@ -130,3 +131,29 @@ metadata and sessions apart from the approved grading/week enrichment above.
 All eight courses now have known weeks for all 431 imported slots.
 Apart from the approved catalogue grading/week enrichment,
 all existing catalogue, academic, planning, preference and chat rows are preserved.
+
+## Three-course EEE core extension
+
+The two `2026_*_eee_core.json` snapshots reuse the verified bulk module and
+historical index datasets above. They add only EE2103, EE2005 and IE2107, all
+3 AU. EE2073 remains excluded: its PRJ sessions cannot be represented by the
+existing class-type enum. No schema or class-type mapping changes are made.
+
+| Course | Semester 1 indexes / slots | Semester 2 indexes / slots |
+|---|---:|---:|
+| EE2103 — Semiconductor Fundamentals | 20 / 40 | 7 / 31 |
+| EE2005 — Electrical Devices & Machines | 7 / 10 | 17 / 34 |
+| IE2107 — Engineering Mathematics II | 9 / 18 | 22 / 88 |
+| Total | 36 / 68 | 46 / 153 |
+
+No course/index pair collides between terms or with the existing catalogue.
+The batch adds 82 index rows and 221 slots. Grading is LETTER_GRADED by user
+confirmation. The 65 blank Semester 1 week values use the confirmed 1-13 default
+(EE2103: 40, EE2005: 7, IE2107: 18), retaining blank `source_remarks` for provenance.
+The other 156 explicit source week values are preserved. Days, times, class types
+and venues are all supplied by the source. EE2005 has no published lecture slots
+in either dataset and only tutorial slots in Semester 2; no sessions are invented.
+
+Vacancy, exam dates and prerequisite/restriction/exclusion import fields remain
+NULL. Bulk source categories/restrictions are retained as evidence only, without
+global course-type or curriculum changes. All existing records remain unchanged.

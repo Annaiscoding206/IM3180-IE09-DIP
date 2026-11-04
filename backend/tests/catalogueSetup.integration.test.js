@@ -9,6 +9,34 @@ const foundationSnapshots = [
   require('../../database/catalogue/2026_1_eee_foundation.json'),
   require('../../database/catalogue/2026_2_eee_foundation.json'),
 ];
+const coreSnapshots = [
+  require('../../database/catalogue/2026_1_eee_core.json'),
+  require('../../database/catalogue/2026_2_eee_core.json'),
+];
+
+test('three-course core batch preserves semester counts, source weeks and excludes unsupported EE2073', () => {
+  const expected = [[[20, 40], [7, 10], [9, 18]], [[7, 31], [17, 34], [22, 88]]];
+  const keys = new Set();
+  let supplemented = 0;
+  for (const [n, seed] of coreSnapshots.entries()) {
+    assert.equal(seed.semester, n + 1);
+    assert.deepEqual(seed.courses.map(c => c.course_code), ['EE2103', 'EE2005', 'IE2107']);
+    for (const [i, c] of normalizeSnapshot(seed).entries()) {
+      assert.equal(c.grading_type, 'LETTER_GRADED'); assert.equal(c.au, 3);
+      assert.deepEqual([c.indexes.length, c.indexes.reduce((sum, index) => sum + index.slots.length, 0)], expected[n][i]);
+      for (const index of c.indexes) {
+        const key = c.course_code + '/' + index.index; assert.ok(!keys.has(key)); keys.add(key);
+        assert.ok(index.slots.every(slot => slot[5] && slot[6]));
+      }
+      for (const slot of Object.values(seed.courses[i].indexes).flat()) if (Object.hasOwn(slot, 'source_remarks')) {
+        supplemented++; assert.equal(slot.source_remarks, ''); assert.equal(slot.remarks, 'Teaching Wk1-13');
+      }
+    }
+  }
+  assert.equal(keys.size, 82); assert.equal(supplemented, 65);
+  const explicitLab = normalizeSnapshot(coreSnapshots[0])[1].indexes.flatMap(i => i.slots).filter(s => s[0] === 'LAB');
+  assert.ok(explicitLab.every(s => ['6,12', '7,13'].includes(s[6])));
+});
 
 test('six-course snapshots preserve both semesters without course/index collisions and with user-confirmed grading/weeks', () => {
   const counts = [
@@ -361,6 +389,71 @@ test('catalogue extension is atomic, repeatable and preserves planning/history o
         }
       }
       assert.deepEqual(await capture(allTables), after, 'Catalogue API reads do not mutate any records');
+    } finally { await new Promise(resolve => apiServer.close(resolve)); }
+  });
+
+  await t.test('three-course import preserves existing records, repeats without writes and exposes both terms', async () => {
+    const seeds = structuredClone(coreSnapshots);
+    const names = seeds[0].courses.map(c => c.course_code);
+    const newCodes = names.map((_, i) => prefix + 'R' + i);
+    codes.push(...newCodes);
+    for (const seed of seeds) for (const c of seed.courses) c.course_code = newCodes[names.indexOf(c.course_code)];
+    const contexts = [];
+    for (const [year, semester] of [['2026-2027', 1], ['2026-2027', 2], ['2025-2026', 1]]) {
+      const [r] = await pool.query('INSERT INTO planning_request (student_id, academic_year, semester) VALUES (?, ?, ?)', [student, year, semester]);
+      const [p] = await pool.query("INSERT INTO plan (request_id, plan_name) VALUES (?, 'Core catalogue fixture')", [r.insertId]);
+      contexts.push({ request_id: r.insertId, plan_id: p.insertId, academic_year: year, semester });
+    }
+    const [tables] = await pool.query('SHOW TABLES');
+    const allTables = tables.map(row => Object.values(row)[0]);
+    const before = await capture(allTables);
+    for (const [i, seed] of seeds.entries()) assert.deepEqual(await importCatalogue(pool, seed), {
+      schema_changed: false, indexes_inserted: i === 0 ? 36 : 46, slots_inserted: i === 0 ? 68 : 153,
+      types_inserted: 0, grading_updated: 0, teaching_weeks_updated: 0,
+    });
+    const after = await capture(allTables);
+    for (const table of allTables) {
+      const retained = ['course_info', 'class_slots'].includes(table)
+        ? after[table].filter(value => !newCodes.includes(JSON.parse(value).course_code)) : after[table];
+      assert.deepEqual(retained, before[table], table + ' existing rows preserved');
+    }
+    for (let n = 0; n < 2; n++) for (const seed of seeds) assert.deepEqual(await importCatalogue(pool, seed), {
+      schema_changed: false, indexes_inserted: 0, slots_inserted: 0, types_inserted: 0, grading_updated: 0, teaching_weeks_updated: 0,
+    });
+    assert.deepEqual(await capture(allTables), after);
+    const app = require('express')();
+    app.use((req, res, next) => { res.locals.authenticatedStudentId = student; next(); });
+    app.use('/api/courses', require('../src/routes/courseRoutes'));
+    const apiServer = app.listen(0, '127.0.0.1'); await once(apiServer, 'listening');
+    try {
+      const get = async suffix => {
+        const response = await fetch(`http://127.0.0.1:${apiServer.address().port}/api/courses${suffix}`);
+        assert.equal(response.status, 200); return (await response.json()).data;
+      };
+      const list = suffix => get(`?search=${prefix}R${suffix}`);
+      for (const query of ['', '&academic_year=2026-2027&semester=1', '&academic_year=2026-2027&semester=2']) {
+        assert.equal((await list(query)).length, 3);
+      }
+      assert.equal((await list('&academic_year=2025-2026')).length, 0);
+      for (const context of contexts) for (const query of [`&plan_id=${context.plan_id}`, `&planning_request_id=${context.request_id}`]) {
+        const rows = await list(query); assert.equal(rows.length, 3);
+        assert.ok(rows.every(row => row.available_for_planning_term === (context.academic_year === '2026-2027')));
+        assert.ok(rows.every(row => row.grading_type === 'LETTER_GRADED'));
+        for (const row of rows) assert.deepEqual(row.available_semesters, [1, 2].map(semester => ({ academic_year: '2026-2027', semester })));
+      }
+      for (const code of newCodes) {
+        const expected = seeds.flatMap(seed => normalizeSnapshot(seed).filter(c => c.course_code === code)
+          .flatMap(c => c.indexes.map(index => ({ ...index, semester: seed.semester }))));
+        const detail = await get('/' + code);
+        assert.deepEqual(detail.indexes.map(i => [i.index_no, i.semester]).sort(), expected.map(i => [i.index, i.semester]).sort());
+        for (const index of expected) {
+          const slots = await get(`/${code}/indexes/${index.index}/timetable`);
+          const fields = ['class_type', 'class_group', 'day_of_week', 'start_time', 'end_time', 'venue', 'teaching_weeks'];
+          assert.ok(slots.every(slot => slot.teaching_weeks));
+          assert.deepEqual(slots.map(row => JSON.stringify(fields.map(f => row[f]))).sort(), index.slots.map(JSON.stringify).sort());
+        }
+      }
+      assert.deepEqual(await capture(allTables), after);
     } finally { await new Promise(resolve => apiServer.close(resolve)); }
   });
 });
