@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { indexesForPlanningTerm } from "./planningContext";
 import { api } from "./api";
 import PlannerPreferences from "./PlannerPreferences";
 import ReasonDialog from "./ReasonDialog";
@@ -391,6 +392,7 @@ export function WeeklyCalendar({
 // Available indexes
 function IndexOptions({
   course,
+  semester,
   options,
   selectedIndex,
   onChoose,
@@ -464,7 +466,7 @@ function IndexOptions({
         })
       ) : (
         <p className="planner-empty-inline">
-          No indexes match the filters.
+          No indexes available for Semester {semester}
         </p>
       )}
     </div>
@@ -512,6 +514,15 @@ export default function Planner({
   ]);
 
   const requestId = planningRequest?.request_id;
+  const indexContext = `${activePlanId}/${requestId}/${planningRequest?.academic_year}/${planningRequest?.semester}`;
+  const indexContextRef = useRef(indexContext);
+  indexContextRef.current = indexContext;
+  useEffect(() => {
+    indexContextRef.current = indexContext;
+    setOptionsByCourse({});
+    setExpandedCourse(null);
+    return () => { indexContextRef.current = null; };
+  }, [indexContext]);
 
   const selected = useMemo(
     () =>
@@ -854,18 +865,19 @@ export default function Planner({
 
     setExpandedCourse(code);
 
-    if (optionsByCourse[code]) return;
+    if (optionsByCourse[code]?.context === indexContext) return;
+    const context = indexContext;
 
     setOptionsByCourse((current) => ({
       ...current,
-      [code]: { loading: true },
+      [code]: { loading: true, context },
     }));
 
     try {
-      const detail = await api.course(code);
+      const detail = await api.course(code, activePlanId, requestId);
 
       const options = await Promise.all(
-        (detail.indexes || []).map(async (index) => {
+        indexesForPlanningTerm(detail.indexes, planningRequest).map(async (index) => {
           try {
             return {
               ...index,
@@ -883,18 +895,22 @@ export default function Planner({
         })
       );
 
+      if (indexContextRef.current !== context) return;
       setOptionsByCourse((current) => ({
         ...current,
         [code]: {
           loading: false,
+          context,
           options,
         },
       }));
     } catch (loadError) {
+      if (indexContextRef.current !== context) return;
       setOptionsByCourse((current) => ({
         ...current,
         [code]: {
           loading: false,
+          context,
           error: loadError.message,
         },
       }));
@@ -1783,10 +1799,8 @@ export default function Planner({
                   course.course_code
               );
 
-              const details =
-                optionsByCourse[
-                  course.course_code
-                ];
+              const cachedDetails = optionsByCourse[course.course_code];
+              const details = cachedDetails?.context === indexContext ? cachedDetails : null;
 
               return (
                 <article
@@ -1952,6 +1966,7 @@ export default function Planner({
                     ) : (
                       <IndexOptions
                         course={course}
+                        semester={planningRequest?.semester}
                         options={
                           details?.options ||
                           []

@@ -66,10 +66,21 @@ test('full catalogue availability and term enforcement across selection and gene
       assert.equal(eligibility.status,200); assert.equal(eligibility.body.can_select,true);
       assert.equal(eligibility.body.eligible,true);
       const detail = await http(`/courses/${codes[2]}?plan_id=${context.plan_id}`);
-      assert.equal(detail.status,200); assert.equal(detail.body.data.indexes.length,2);
-      assert.deepEqual(detail.body.data.indexes.map(i=>i.semester),[1,2]);
+      assert.equal(detail.status,200);
+      assert.deepEqual(detail.body.data.indexes.map(i=>i.semester), n < 2 ? [context.semester] : []);
+      assert.ok(detail.body.data.indexes.every(i=>i.academic_year===context.academic_year));
+      const requestDetail = await http(`/courses/${codes[2]}?planning_request_id=${context.request_id}`);
+      assert.deepEqual(requestDetail.body.data.indexes,detail.body.data.indexes);
       if(n<2) assert.equal(detail.body.data.semester,context.semester, 'Prefer matching-term metadata');
     }
+  });
+  await t.test('unscoped course detail retains both terms; unavailable course detail has no selectable indexes', async () => {
+    assert.deepEqual((await http(`/courses/${codes[2]}`)).body.data.indexes.map(i=>i.semester),[1,2]);
+    const result = await http(`/courses/${codes[1]}?plan_id=${contexts[0].plan_id}`);
+    assert.equal(result.status,200);
+    assert.deepEqual(result.body.data.indexes,[]);
+    assert.equal(result.body.data.available_for_planning_term,false);
+    assert.deepEqual(result.body.data.available_semesters,[{academic_year:'2026-2027',semester:2}]);
   });
   await t.test('foreign, mismatched and invalid planning contexts are rejected; request_id retains its old contract', async () => {
     assert.equal((await list(`&planning_request_id=${contexts[3].request_id}`)).status,404);

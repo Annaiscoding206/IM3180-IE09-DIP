@@ -308,3 +308,10 @@ Both `POST /api/plans/:planId/selected-courses` and the legacy
 unavailable offerings with HTTP 422, `code: COURSE_NOT_AVAILABLE_IN_TERM`,
 `course_code`, `academic_year`, and `semester`. Missing academic prerequisites
 or other academic failures may be reported first, as before.
+
+Course detail index choices: `GET /api/courses/:courseCode?plan_id=...`
+(or owned `planning_request_id=...`) returns `indexes` for that context's exact
+academic year and semester only. Unavailable courses still return their metadata
+and `available_semesters`, with `indexes: []`. Without context, course detail
+continues returning all offerings. Manual index validation and alternative-index
+queries retain their existing term and ownership checks.

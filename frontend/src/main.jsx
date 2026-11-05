@@ -1,4 +1,4 @@
-import { createPlanningContextLoader } from "./planningContext";
+import { createPlanningContextLoader, indexesForPlanningTerm } from "./planningContext";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { api } from "./api";
@@ -299,7 +299,7 @@ function App({ studentId, demoSwitchEnabled, onSwitchStudent, switchError }) {
       ({ courses: refreshed }) => setCourses(refreshed),
       error => setContextError(error.message || "Could not refresh planning context."), planningRequest?.request_id);
     return () => contextLoader.current.invalidate();
-  }, [studentId, loading, student, workingPlanId, planningRequest?.request_id, selectionRevision]);
+  }, [studentId, loading, student, workingPlanId, planningRequest?.request_id, planningRequest?.academic_year, planningRequest?.semester, selectionRevision]);
 
   const completedCodes = useMemo(
     () => new Set(student?.completed_courses || []),
@@ -481,7 +481,7 @@ function App({ studentId, demoSwitchEnabled, onSwitchStudent, switchError }) {
       const detail = await api.course(course.course_code, workingPlanId, planningRequest?.request_id);
 
       const indexes = await Promise.all(
-        detail.indexes.map(async (index) => {
+        indexesForPlanningTerm(detail.indexes, planningRequest || detail.planning_term).map(async (index) => {
           try {
             const slots = await api.timetable(
               detail.course_code,
@@ -1123,7 +1123,7 @@ function App({ studentId, demoSwitchEnabled, onSwitchStudent, switchError }) {
               </div>
             ) : (
               <div className="index-empty">
-                No indexes are recorded for this course.
+                {planningRequest ? `No indexes available for Semester ${planningRequest.semester}` : "No indexes are recorded for this course."}
               </div>
             )}
 

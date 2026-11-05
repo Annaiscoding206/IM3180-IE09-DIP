@@ -253,7 +253,9 @@ const getCourseByCode = async (req, res) => {
       success: true,
       data: {
         ...annotated[0],
-        indexes: indexes
+        indexes: annotated[0].planning_term ? indexes.filter(index =>
+          index.academic_year === annotated[0].planning_term.academic_year &&
+          Number(index.semester) === Number(annotated[0].planning_term.semester)) : indexes
       }
     });
   } catch (error) {

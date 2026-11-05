@@ -157,3 +157,9 @@ in either dataset and only tutorial slots in Semester 2; no sessions are invente
 Vacancy, exam dates and prerequisite/restriction/exclusion import fields remain
 NULL. Bulk source categories/restrictions are retained as evidence only, without
 global course-type or curriculum changes. All existing records remain unchanged.
+
+The Semester 1 completion snapshot `2026_1_legacy_completion.json` adds only
+IE4758 index 37545 (one lecture session). It reuses the existing course metadata
+and mappings and the verified historical timetable. See
+[the complete 21-course audit](SEMESTER1_CATALOGUE_AUDIT.md) for counts and preserved
+legacy venue/week representation differences. No Semester 2 records are changed.

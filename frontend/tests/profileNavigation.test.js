@@ -105,8 +105,10 @@ function fixtureApi(t, { noPlan = false, requestWithoutPlan = false, failInitial
       };
     } else if (url.pathname === '/api/courses') {
       data = courses;
+    } else if (url.pathname.endsWith('/timetable')) {
+      data = [];
     } else if (url.pathname.startsWith('/api/courses/')) {
-      data = { ...courses.find(c => c.course_code === url.pathname.split('/')[3]), indexes: [] };
+      data = { indexes: [], ...courses.find(c => c.course_code === url.pathname.split('/')[3]) };
     } else if (url.pathname.includes('/eligibility/')) {
       return Response.json({ success: true, eligible: !url.pathname.endsWith('/COREQ'), can_select: true, message: 'Backend academic result' });
     } else if (url.pathname === '/api/planning-requests') {
@@ -477,4 +479,27 @@ for (const requestWithoutPlan of [false, true]) test(`Explorer retains unavailab
   assert.equal(document.querySelector('.dialog-action').disabled, true);
   assert.match(document.querySelector('[role="dialog"] .availability').textContent, /Not offered in Semester 1/);
   assert.deepEqual(api.unexpected, []);
+});
+
+test('Explorer detail modal excludes wrong-term indexes while keeping course cards visible', async t => {
+  const indexes = [32361, 32362, 32363, 32364, 34040].map(index_no => ({ index_no, academic_year: '2026-2027', semester: index_no === 34040 ? 2 : 1, vacancy: null }));
+  indexes.push({ index_no: 99999, academic_year: '2025-2026', semester: 1 });
+  const courses = ['IE0005', 'OTHER'].map(course_code => ({ course_code, course_name: course_code, au: 3, academic_year: '2026-2027', semester: 1, course_types: [], indexes: course_code === 'IE0005' ? indexes : [indexes[4]] }));
+  const state = fixtureApi(t, { courses });
+  await mount();
+  await waitFor('.course-card');
+  for(let n=0;n<30;n++) await flush();
+  for (const [i, course] of courses.entries()) {
+    const buttons = [...document.querySelectorAll('button')].filter(b => b.textContent.includes('Course details'));
+    await click(buttons[i]);
+    await waitFor('.course-dialog');
+    for(let n=0;n<30;n++) await flush();
+    const text = document.querySelector('.course-dialog').textContent;
+    assert.ok(!text.includes('34040')); assert.ok(!text.includes('99999'));
+    if (course.course_code === 'IE0005') for(const id of [32361,32362,32363,32364]) assert.ok(text.includes(String(id)));
+    else assert.ok(text.includes('No indexes available for Semester 1'));
+    await click(document.querySelector('[aria-label="Close course details"]'));
+  }
+  assert.ok(!state.calls.some(p => /indexes\/(34040|99999)\//.test(p)));
+  assert.deepEqual(state.unexpected, []);
 });

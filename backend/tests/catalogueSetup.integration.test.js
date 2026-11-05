@@ -456,4 +456,19 @@ test('catalogue extension is atomic, repeatable and preserves planning/history o
       assert.deepEqual(await capture(allTables), after);
     } finally { await new Promise(resolve => apiServer.close(resolve)); }
   });
+  await t.test('Semester 1 completion adds exactly one missing index/session and repeats without changing existing records', async () => {
+    const seed = structuredClone(require('../../database/catalogue/2026_1_legacy_completion.json'));
+    assert.equal(seed.courses[0].course_code, 'IE4758');
+    assert.deepEqual(normalizeSnapshot(seed)[0].indexes, [{ index: 37545, slots: [['LECTURE', 'EPLE', 'MON', '19:00:00', '21:50:00', 'TR+62', '1-13']] }]);
+    const code = prefix + 'L'; codes.push(code); seed.courses[0].course_code = code;
+    const tables = (await pool.query('SHOW TABLES'))[0].map(row => Object.values(row)[0]);
+    const before = await capture(tables);
+    const result = await importCatalogue(pool, seed);
+    assert.equal(result.indexes_inserted, 1); assert.equal(result.slots_inserted, 1);
+    const after = await capture(tables);
+    for (const table of tables) assert.deepEqual(after[table].filter(s => JSON.parse(s).course_code !== code), before[table]);
+    assert.deepEqual(await importCatalogue(pool, seed), { schema_changed:false, indexes_inserted:0, slots_inserted:0, types_inserted:0, grading_updated:0, teaching_weeks_updated:0 });
+    assert.deepEqual(await capture(tables), after);
+  });
+
 });

@@ -47,3 +47,13 @@ test('no curriculum still loads eligibility; current failures reach the caller',
   const failed=createPlanningContextLoader({courses:async()=>{throw Error('offline')},curriculum:async()=>null});
   await failed.load('S',3,()=>{},e=>errors.push(e)); assert.equal(errors[0].message,'offline');
 });
+
+test('index choices match both academic year and semester, without deleting other offerings', async () => {
+  const { indexesForPlanningTerm } = await import('../src/planningContext.js');
+  const indexes = [32361, 32362, 32363, 32364, 34040].map(index_no => ({ index_no, academic_year: '2026-2027', semester: index_no === 34040 ? 2 : 1 }));
+  indexes.push({ index_no: 1, academic_year: '2025-2026', semester: 1 });
+  assert.deepEqual(indexesForPlanningTerm(indexes, { academic_year: '2026-2027', semester: 1 }).map(i => i.index_no), [32361,32362,32363,32364]);
+  assert.deepEqual(indexesForPlanningTerm(indexes, { academic_year: '2026-2027', semester: 2 }).map(i => i.index_no), [34040]);
+  assert.deepEqual(indexesForPlanningTerm(indexes, { academic_year: '2027-2028', semester: 1 }), []);
+  assert.equal(indexesForPlanningTerm(indexes, null).length, 6);
+});

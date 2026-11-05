@@ -41,3 +41,10 @@ export function createPlanningContextLoader(api) {
     },
   };
 }
+
+// Index choices belong to an exact planning term; course visibility is separate.
+export function indexesForPlanningTerm(indexes, term) {
+  if (!term) return indexes || [];
+  return (indexes || []).filter(index => index.academic_year === term.academic_year &&
+    Number(index.semester) === Number(term.semester));
+}
