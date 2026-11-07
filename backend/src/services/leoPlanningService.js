@@ -7,6 +7,41 @@ const { validatePreferences } = require("./preferenceValidation");
 const summaries = require("./planningSummaryService");
 const { generatePlans, regeneratePlan } = require("./generationService");
 
+// Browser context is supplied separately from model arguments and verified
+// before reading chat history or invoking tools. Telegram callers may omit it.
+async function bindPlanningContext(studentId, requestId = null, planId = null) {
+  if (requestId === null && planId === null) return {};
+  if (!studentId) throw new plans.PlanningError(401, 'Student identity required');
+  if (requestId === null) throw new plans.PlanningError(400, 'request_id is required with plan_id');
+  const request = await summaries.requireOwnedRequest(contextId(requestId, 'request_id'), studentId);
+  const plan = planId === null ? null : await resolvePlanContext(studentId, { request_id: request.request_id, plan_id: planId });
+  return { activeRequestId: request.request_id, activePlanId: plan?.plan_id ?? null,
+    planningTerm: { academic_year: request.academic_year, semester: request.semester } };
+}
+
+function scopedRequest(context, requestId = null) {
+  if (context.activeRequestId != null && requestId != null && Number(requestId) !== Number(context.activeRequestId)) {
+    throw new plans.PlanningError(409, 'Choose that planning term in the website before using its request.', { code: 'ACTIVE_REQUEST_MISMATCH' });
+  }
+  return context.activeRequestId ?? requestId;
+}
+
+async function toolPlanningScope(context, { requestId = null, planId = null, academicYear = null, semester = null } = {}) {
+  const request = scopedRequest(context, requestId);
+  if (context.activeRequestId != null &&
+      ((academicYear !== null && academicYear !== context.planningTerm.academic_year) ||
+       (semester !== null && Number(semester) !== Number(context.planningTerm.semester)))) {
+    throw new plans.PlanningError(409, 'The requested term differs from the website Planning Term.', { code: 'ACTIVE_REQUEST_MISMATCH' });
+  }
+  const plan = planId ?? context.activePlanId ?? null;
+  if (context.activeRequestId != null && plan !== null) {
+    await resolvePlanContext(context.studentId, { request_id: request, plan_id: plan });
+  }
+  return { requestId: request, planId: plan,
+    academicYear: context.planningTerm?.academic_year ?? academicYear,
+    semester: context.planningTerm?.semester ?? semester };
+}
+
 // Only exact application-recognized commands authorize writes. A model-supplied
 // confirmation boolean, quoted command or casual acknowledgement is insufficient.
 function parsePlanningCommand(message) {
@@ -23,6 +58,7 @@ async function ownedConversation(db, studentId, conversationId, lock = false) {
   if (!rows.length) throw new plans.PlanningError(404, "Conversation not found for this student.");
 }
 async function stagePreferenceDraft(context, requestId, draft) {
+  requestId = scopedRequest(context, requestId);
   const { studentId, conversationId } = context;
   if (!studentId || !conversationId) throw new plans.PlanningError(401, "A student conversation is required to stage preferences");
   // Validate even ready model output using the authoritative persistence rules.
@@ -53,6 +89,7 @@ async function readDraft(context) {
   return rows[0] ?? null;
 }
 async function confirmPreferenceDraft(context, draftId, requestId) {
+  requestId = scopedRequest(context, requestId);
   const command = parsePlanningCommand(context.message);
   if (!command || command.action !== "confirm" || command.draft_id !== draftId || command.request_id !== Number(requestId)) {
     throw new plans.PlanningError(409, "Explicit draft/request confirmation is required", { code: "CONFIRMATION_REQUIRED" });
@@ -72,6 +109,7 @@ async function confirmPreferenceDraft(context, draftId, requestId) {
   });
 }
 async function generateForStudent(context, requestId, sourcePlanId = null) {
+  requestId = scopedRequest(context, requestId);
   const command = parsePlanningCommand(context.message);
   if (!command || command.request_id !== Number(requestId) ||
       !(command.action === "generate" || command.action === "confirm" && command.generate) ||
@@ -82,7 +120,7 @@ async function generateForStudent(context, requestId, sourcePlanId = null) {
     const draft = await readDraft(context);
     if (!draft || draft.draft_id !== command.draft_id || draft.request_id !== command.request_id || draft.status !== "saved") throw new plans.PlanningError(409, "Confirm and save the draft before generation");
   }
-  const planningContext = await resolveEligibilityPlan(context.studentId, requestId, sourcePlanId);
+  const planningContext = await resolveEligibilityPlan(context.studentId, requestId, sourcePlanId ?? context.activePlanId ?? null);
   if (planningContext.status === 'clarification_required') return planningContext;
   const result = await generatePlans(requestId, context.studentId, { source_plan_id: planningContext.plan_id });
   const detailed = [];
@@ -185,6 +223,7 @@ async function regenerateNamedPlan(studentId, requestId, planLetter) {
   };
 }
 module.exports = {
+  bindPlanningContext, scopedRequest, toolPlanningScope,
   parsePlanningCommand,
   stagePreferenceDraft,
   readDraft,

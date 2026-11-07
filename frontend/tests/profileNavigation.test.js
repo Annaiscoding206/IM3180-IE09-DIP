@@ -87,7 +87,7 @@ function fixtureApi(t, { noPlan = false, requestWithoutPlan = false, failInitial
     status: 'GENERATED',
   };
 
-  t.mock.method(globalThis, 'fetch', async path => {
+  t.mock.method(globalThis, 'fetch', async (path, options = {}) => {
     calls.push(path);
 
     const url = new URL(path, 'http://localhost');
@@ -111,6 +111,8 @@ function fixtureApi(t, { noPlan = false, requestWithoutPlan = false, failInitial
       data = { indexes: [], ...courses.find(c => c.course_code === url.pathname.split('/')[3]) };
     } else if (url.pathname.includes('/eligibility/')) {
       return Response.json({ success: true, eligible: !url.pathname.endsWith('/COREQ'), can_select: true, message: 'Backend academic result' });
+    } else if (url.pathname === '/api/planning-requests/resolve-term') {
+      data = { ...request, ...JSON.parse(options.body) };
     } else if (url.pathname === '/api/planning-requests') {
       if (fail) {
         return Response.json(
@@ -126,7 +128,7 @@ function fixtureApi(t, { noPlan = false, requestWithoutPlan = false, failInitial
     } else if (url.pathname === '/api/planning-requests/10') {
       data = request;
     } else if (url.pathname === '/api/planning-requests/10/plans') {
-      data = requestWithoutPlan ? [] : [plan];
+      data = requestWithoutPlan || noPlan ? [] : [plan];
     } else if (url.pathname === '/api/planning-requests/10/active-plan') {
       data = { plan: null };
     } else if (url.pathname === '/api/plans/7/selected-courses') {
@@ -410,7 +412,7 @@ test(
 
     const calls = [];
 
-    t.mock.method(globalThis, 'fetch', async path => {
+    t.mock.method(globalThis, 'fetch', async (path, options = {}) => {
       calls.push(path);
       if (path === '/api/students/current') return Response.json({ success: true, data: { student_id: 'DEMO001' } });
 

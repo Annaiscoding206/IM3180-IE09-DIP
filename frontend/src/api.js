@@ -90,6 +90,7 @@ export const api = {
     request(`/students/${encodeURIComponent(studentId)}/eligibility/${encodeURIComponent(code)}${planQuery(planId)}`),
   planningRequests: (studentId) => request(`/planning-requests?student_id=${encodeURIComponent(studentId)}`).then((body) => body.data),
   planningRequest: (requestId) => request(`/planning-requests/${requestId}`).then((body) => body.data),
+  resolvePlanningTerm: term => json('POST', '/planning-requests/resolve-term', term).then(body => body.data),
 
   // New methods use the documented planning endpoints; a request ID is NOT a plan ID.
   createPlanningRequest: (data) => json("POST", "/planning-requests", data).then((body) => body.data),
@@ -128,8 +129,9 @@ export const api = {
   selectPlan: (planId) => json("POST", `/plans/${planId}/select`).then((body) => body.data),
   // AI Chatbot — general academic questions.
   // Student identity is never supplied by the browser.
-  askChat: (message) =>
-    json("POST", "/chat", { message }),
+  askChat: (message, requestId = null, planId = null) =>
+    json("POST", "/chat", { message, ...(requestId == null ? {} : { request_id: requestId }),
+      ...(planId == null ? {} : { plan_id: planId }) }),
   // Leo Assistant — retrieve the active conversation
   // and messages shared between website and Telegram.
   getActiveChat: () =>

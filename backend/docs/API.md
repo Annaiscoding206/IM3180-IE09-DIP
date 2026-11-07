@@ -315,3 +315,28 @@ academic year and semester only. Unavailable courses still return their metadata
 and `available_semesters`, with `indexes: []`. Without context, course detail
 continues returning all offerings. Manual index validation and alternative-index
 queries retain their existing term and ownership checks.
+
+### Planning term navigation
+
+`POST /api/planning-requests/resolve-term` accepts
+`{"academic_year":"2026-2027","semester":1}` and returns HTTP 200 with
+`{success:true,data:<planning request>}`. It uses the existing trusted planning
+identity; student IDs and other body fields are rejected. Academic years must
+be consecutive `YYYY-YYYY` values; semesters retain the existing 1–3 range.
+
+The endpoint loads the student's most recently updated request for that exact
+year/semester, breaking ties by descending request ID. If none exists, it creates
+an empty request with the normal defaults. A student-row transaction lock
+serializes simultaneous term-resolution calls. It never changes existing
+request terms, target AU, plans, selections, preferences, blocks or locks.
+Existing ownership and wrong-term course/index validation remain unchanged.
+The legacy POST collection endpoint retains its existing explicit-create behavior.
+
+Website `POST /api/chat` also accepts optional `request_id` and `plan_id` alongside
+`message`/`conversationId`. With a request, Leo derives the academic year/semester
+from the owned backend row; with a plan it also verifies that the plan belongs to
+that request using the shared plan resolver. Responses report `planning_context`.
+Malformed context returns 400, foreign/mismatched ownership returns 404, and
+archived plans retain 409 behaviour. Planning commands/tools attempting another
+request return `ACTIVE_REQUEST_MISMATCH`; student identity still comes only from
+trusted middleware. No request/plan binding preserves legacy/Telegram resolution.

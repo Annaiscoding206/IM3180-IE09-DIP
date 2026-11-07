@@ -19,7 +19,8 @@ export const getAcademicContextTool = tool({
     const { studentId } = context;
     if (section === "degree_audit") return audit.getDegreeAudit(studentId, studentId);
     if (section === "curriculum") {
-      const planningContext = await leo.resolveEligibilityPlan(studentId, context.activeRequestId ?? null, plan_id ?? null);
+      const scope = await leo.toolPlanningScope(context, { planId: plan_id });
+      const planningContext = await leo.resolveEligibilityPlan(studentId, scope.requestId, scope.planId);
       if (planningContext.status === 'clarification_required') return planningContext;
       return curriculum.getStudentCurriculum(studentId, studentId, { plan_id: planningContext.plan_id });
     }
@@ -29,10 +30,15 @@ export const getAcademicContextTool = tool({
   })
 });
 export const listPlanningRequestsTool = tool({ name: "list_planning_requests", description: "List the trusted student's planning requests so the student can explicitly choose a request ID.",
-  parameters: z.object({}), execute: wrap((_, context) => plans.listRequests(context.studentId)) });
+  parameters: z.object({}), execute: wrap(async (_, context) => (await plans.listRequests(context.studentId))
+    .filter(request => context.activeRequestId == null || Number(request.request_id) === Number(context.activeRequestId))) });
 export const getPlanningContextTool = tool({ name: "get_planning_context", description: "Read an owned request's shared preferences and the specified plan's selected courses and blocks, plus plan summaries. Pass plan_id for a draft; null uses a unique confirmed plan or asks for clarification. Never treat legacy request selections or blocks as plan context.",
-  parameters: z.object({ request_id: z.number().int().positive(), plan_id: z.number().int().positive().nullable() }),
-  execute: wrap(({ request_id, plan_id }, context) => leo.getPlanningContext(context.studentId, request_id, plan_id)) });
+  parameters: z.object({ request_id: z.number().int().positive().nullable(), plan_id: z.number().int().positive().nullable() }),
+  execute: wrap(async ({ request_id, plan_id }, context) => {
+    const scope = await leo.toolPlanningScope(context, { requestId: request_id, planId: plan_id });
+    if (scope.requestId == null) return { status: 'clarification_required', message: 'Choose a planning request.' };
+    return leo.getPlanningContext(context.studentId, scope.requestId, scope.planId);
+  }) });
 export const saveConfirmedPreferencesTool = tool({ name: "save_confirmed_preferences", description: "Save the exact stored draft only when the current user's message is the explicit CONFIRM draft-id FOR REQUEST request-id command. Never pass a model-inferred confirmation.",
   parameters: z.object({ draft_id: z.string(), request_id: z.number().int().positive() }),
   execute: wrap(({ draft_id, request_id }, context) => leo.confirmPreferenceDraft(context, draft_id, request_id)) });

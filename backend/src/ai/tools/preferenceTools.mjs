@@ -222,6 +222,10 @@ parameters: preferenceInputSchema.extend({
   let requestId = input.request_id;
 
   try {
+    const scope = await leo.toolPlanningScope(runContext?.context || {}, {
+      requestId, academicYear: input.academic_year, semester: input.semester
+    });
+    requestId = scope.requestId;
     // Resolve a planning request from the authenticated student.
     if (requestId === null && studentId) {
       const requests = await planService.listRequests(studentId);

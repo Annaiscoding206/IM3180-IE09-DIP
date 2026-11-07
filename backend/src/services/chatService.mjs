@@ -378,12 +378,13 @@ function formatCurrentPlanComparison(allPlans, requestId) {
 }
 // Shared website/Telegram entry point. Injectable runner is server-side only and
 // makes deterministic integration tests possible without external model calls.
-export async function askSmartStars({ message, studentId = null, conversationId = null, sourceChannel = "website" }, { runAgent = run } = {}) {
+export async function askSmartStars({ message, studentId = null, conversationId = null, sourceChannel = "website", requestId = null, planId = null }, { runAgent = run } = {}) {
   if (typeof message !== "string" || !message.trim() || message.trim().length > 2000) throw new TypeError("Message must contain 1–2000 characters.");
   const cleaned = message.trim(), trusted = typeof studentId === "string" && studentId.trim() ? studentId.trim() : null;
   if (conversationId !== null && !trusted) throw Error("Authentication is required to access conversation history.");
   if (conversationId !== null && (!Number.isSafeInteger(conversationId) || conversationId <= 0)) throw TypeError("Invalid conversation ID.");
   if (!["website", "telegram"].includes(sourceChannel)) throw TypeError("Invalid source channel.");
+  const planningBinding = await leo.bindPlanningContext(trusted, requestId, planId);
   let previous = [];
   if (conversationId !== null) {
     previous = await getConversationMessages({ studentId: trusted, conversationId, limit: 30 });
@@ -392,7 +393,7 @@ export async function askSmartStars({ message, studentId = null, conversationId 
     // Tools require a durable owned conversation before they stage a draft.
     conversationId = (await createConversation({ studentId: trusted, title: cleaned.slice(0, 100) })).conversation_id;
   }
-  const context = { studentId: trusted, conversationId, message: cleaned };
+  const context = { studentId: trusted, conversationId, message: cleaned, ...planningBinding };
     // Recognize an explicit natural-language save request.
   const naturalSaveRequested =
     /^(?:yes,?\s+)?(?:please\s+)?save (?:these|my|the) preferences[.!]?$/i.test(cleaned);
@@ -403,7 +404,8 @@ export async function askSmartStars({ message, studentId = null, conversationId 
   if (naturalSaveRequested && trusted) {
     const pendingDraft = await leo.readDraft(context);
 
-    if (pendingDraft?.status === "ready_for_confirmation") {
+    if (pendingDraft?.status === "ready_for_confirmation" &&
+        (context.activeRequestId == null || Number(pendingDraft.request_id) === Number(context.activeRequestId))) {
       commandText =
         `CONFIRM ${pendingDraft.draft_id} FOR REQUEST ${pendingDraft.request_id}`;
     }
@@ -420,15 +422,17 @@ export async function askSmartStars({ message, studentId = null, conversationId 
       /\b(?:planning\s+)?request(?:\s+id)?\s*#?\s*([1-9]\d*)\b/i
     );
 
-    if (requestMatch) {
+    if (requestMatch || context.activeRequestId != null) {
       // Detect an explicitly referenced source plan.
       const sourcePlanMatch = cleaned.match(
         /\b(?:from|using|based on)\s+(?:my\s+)?plan\s*#?\s*([1-9]\d*)\b/i
       );
 
-      commandText = sourcePlanMatch
-        ? `GENERATE REQUEST ${requestMatch[1]} FROM PLAN ${sourcePlanMatch[1]}`
-        : `GENERATE REQUEST ${requestMatch[1]}`;
+      const targetRequest = requestMatch ? Number(requestMatch[1]) : context.activeRequestId;
+      const sourcePlan = sourcePlanMatch ? Number(sourcePlanMatch[1]) : context.activePlanId;
+      commandText = sourcePlan != null
+        ? `GENERATE REQUEST ${targetRequest} FROM PLAN ${sourcePlan}`
+        : `GENERATE REQUEST ${targetRequest}`;
 
       console.log("[LEO ROUTER] Timetable generation:", commandText);
     }
@@ -517,7 +521,8 @@ export async function askSmartStars({ message, studentId = null, conversationId 
         // Retrieve the latest student-owned plan summaries.
         const currentPlanning = await leo.getPlanningContext(
           trusted,
-          requestId
+          leo.scopedRequest(context, requestId),
+          context.activePlanId ?? null
         );
 
         reply = formatCurrentPlanComparison(
@@ -548,7 +553,7 @@ export async function askSmartStars({ message, studentId = null, conversationId 
       try {
         planningResult = await leo.regenerateNamedPlan(
           trusted,
-          requestId,
+          leo.scopedRequest(context, requestId),
           planLetter
         );
 
@@ -602,7 +607,13 @@ export async function askSmartStars({ message, studentId = null, conversationId 
     reply = actionReply(planningResult);
   } else {
     // Preserve the source of previous user messages.
-    const input = previous.map((item) => {
+    const selectedAgent = isPreferenceEditMessage(cleaned)
+      ? preferenceDraftAgent
+      : smartStarsAgent;
+    // History has channel provenance, but no term provenance. Keep stored/display
+    // history intact; never infer a new term's preferences from old-term turns.
+    const preferenceTurn = selectedAgent === preferenceDraftAgent && context.activeRequestId != null;
+    const input = (preferenceTurn ? [] : previous).map((item) => {
       const channel =
         item.source_channel === "telegram"
           ? "Telegram"
@@ -624,10 +635,16 @@ export async function askSmartStars({ message, studentId = null, conversationId 
         ]
       };
     });
+    if (context.activeRequestId != null) {
+      input.push({ role: 'system', content: `The website Planning Term is AY ${context.planningTerm.academic_year}, Semester ${context.planningTerm.semester}; request_id=${context.activeRequestId}, working plan_id=${context.activePlanId ?? 'none'}. Use this context for planning tools. Earlier conversation turns may refer to other terms; never reuse their selections or preferences. Retrieve current data through tools. Student-wide academic facts are unchanged.` });
+      if (preferenceTurn) {
+        const draft = await leo.readDraft(context);
+        if (Number(draft?.request_id) === Number(context.activeRequestId) && ['ready_for_confirmation', 'clarification_required'].includes(draft.status)) {
+          input.push({ role: 'system', content: `Pending preference draft for this request only: ${JSON.stringify(draft.payload)}` });
+        }
+      }
+    }
     input.push({ role: "user", content: [{ type: "input_text", text: cleaned }] });
-    const selectedAgent = isPreferenceEditMessage(cleaned)
-      ? preferenceDraftAgent
-      : smartStarsAgent;
 
     console.log(
       "[LEO ROUTER]",
@@ -646,7 +663,9 @@ export async function askSmartStars({ message, studentId = null, conversationId 
     reply = context.preferenceDraft ? draftReply(context.preferenceDraft) : result.finalOutput;
   }
   if (typeof reply !== "string" || !reply.trim()) throw Error("Smart STARS did not return a valid response.");
-  const response = { success: true, reply: reply.trim(), ...(planningResult ? { planning_result: planningResult } : {}),
+  const response = { success: true, reply: reply.trim(), ...(context.activeRequestId == null ? {} : {
+    planning_context: { request_id: context.activeRequestId, plan_id: context.activePlanId, ...context.planningTerm }
+  }), ...(planningResult ? { planning_result: planningResult } : {}),
     ...(context.preferenceDraft ? { preference_draft: context.preferenceDraft } : {}) };
   if (!trusted) return response;
   const saved = await saveConversationTurn({ studentId: trusted, conversationId, title: cleaned.slice(0, 100), userMessage: cleaned,

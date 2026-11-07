@@ -1,4 +1,5 @@
 import { createPlanningContextLoader, indexesForPlanningTerm } from "./planningContext";
+import { suggestedPlanningTerm, preferredPlanningRequest, planningYears } from "./planningTerm";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { api } from "./api";
@@ -153,6 +154,14 @@ function App({ studentId, demoSwitchEnabled, onSwitchStudent, switchError }) {
   const [courses, setCourses] = useState([]);
   const [student, setStudent] = useState(null);
   const [planningRequest, setPlanningRequest] = useState(null);
+  const [requests, setRequests] = useState([]);
+  const [suggestedTerm] = useState(() => suggestedPlanningTerm());
+  const [termSwitching, setTermSwitching] = useState(false);
+  const [termError, setTermError] = useState("");
+  const requestedTerm = useRef(null);
+  const rememberedPlans = useRef(new Map());
+  const requestScope = useRef(null);
+  requestScope.current = termSwitching ? null : planningRequest?.request_id;
   const [selectedCodes, setSelectedCodes] = useState([]);
   const [workingPlanId, setWorkingPlanId] = useState(null);
   const [selectionRevision, setSelectionRevision] = useState(0);
@@ -214,30 +223,13 @@ function App({ studentId, demoSwitchEnabled, onSwitchStudent, switchError }) {
             api.planningRequests(studentId),
           ]);
 
-        const now = new Date();
-
-        const currentAcademicYear =
-          now.getFullYear() - (now.getMonth() < 7 ? 1 : 0);
-
-        const requestSummary =
-          [...requests]
-            .filter((request) => {
-              const startYear = Number(
-                String(request.academic_year).slice(0, 4)
-              );
-
-              return Number.isInteger(startYear) &&
-                startYear <= currentAcademicYear;
-            })
-            .sort((a, b) =>
-              String(b.academic_year).localeCompare(String(a.academic_year)) ||
-              Number(b.semester) - Number(a.semester) ||
-              Number(b.request_id) - Number(a.request_id)
-            )[0] ?? requests[0] ?? null;
-
-        const requestDetail = requestSummary
-          ? await api.planningRequest(requestSummary.request_id)
-          : null;
+        if (cancelled) return;
+        let rememberedId = null;
+        try { rememberedId = sessionStorage.getItem(`smart-stars-request:${studentId}`); } catch { /* Optional browser memory. */ }
+        const requestSummary = preferredPlanningRequest(requests, rememberedId);
+        const requestDetail = requestedTerm.current || !requestSummary
+          ? await api.resolvePlanningTerm(requestedTerm.current || suggestedTerm)
+          : await api.planningRequest(requestSummary.request_id);
         const availablePlans = requestDetail
           ? await api.plans(requestDetail.request_id)
           : [];
@@ -249,7 +241,7 @@ function App({ studentId, demoSwitchEnabled, onSwitchStudent, switchError }) {
 
         const initialPlan = choosePlannerPlan(
           availablePlans,
-          activeSelection?.plan?.plan_id
+          rememberedPlans.current.get(requestDetail?.request_id) ?? activeSelection?.plan?.plan_id
         );
 
         const initialCodes = initialPlan
@@ -258,7 +250,10 @@ function App({ studentId, demoSwitchEnabled, onSwitchStudent, switchError }) {
           : [];
         if (!cancelled) {
           setStudent(studentData);
+          setRequests([...requests.filter(r => r.request_id !== requestDetail.request_id), requestDetail]);
           setPlanningRequest(requestDetail);
+          requestedTerm.current = null;
+          try { sessionStorage.setItem(`smart-stars-request:${studentId}`, String(requestDetail.request_id)); } catch { /* Optional browser memory. */ }
           setWorkingPlanId(initialPlan?.plan_id ?? null);
           setSelectedCodes(initialCodes);
 
@@ -272,12 +267,13 @@ function App({ studentId, demoSwitchEnabled, onSwitchStudent, switchError }) {
         }
       } catch (loadError) {
         if (!cancelled) {
-          setError(
-            loadError.message || "Could not load database data."
-          );
+          if (requestedTerm.current) {
+            setTermError(loadError.message || "Could not switch planning term. Your previous term is unchanged.");
+            requestedTerm.current = null;
+          } else setError(loadError.message || "Could not load database data.");
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) { setLoading(false); setTermSwitching(false); }
       }
     };
 
@@ -287,6 +283,20 @@ function App({ studentId, demoSwitchEnabled, onSwitchStudent, switchError }) {
       cancelled = true;
     };
   }, [studentId, loadRevision]);
+
+  const switchTerm = term => {
+    if (loading || savingCourse || termSwitching) return;
+    if (term.academic_year === planningRequest?.academic_year && Number(term.semester) === Number(planningRequest?.semester)) return;
+    if (workingPlanId) rememberedPlans.current.set(planningRequest.request_id, workingPlanId);
+    requestedTerm.current = term;
+    requestScope.current = null;
+    contextLoader.current.invalidate();
+    detailGeneration.current++;
+    setActiveCourse(null);
+    setActionError(""); setContextError(""); setReasonProblem(null); setTermError("");
+    setTermSwitching(true); setLoading(true);
+    setLoadRevision(n => n + 1);
+  };
 
   useEffect(() => {
     if (loading || !student) return;
@@ -362,19 +372,7 @@ function App({ studentId, demoSwitchEnabled, onSwitchStudent, switchError }) {
       if (!requestId) {
         if (removing) return;
 
-        const course = courses.find(
-          (item) => item.course_code === code
-        );
-
-        if (!course) {
-          throw new Error("Course not found in the catalogue.");
-        }
-
-        const created = await api.createPlanningRequest({
-          student_id: studentId,
-          academic_year: course.academic_year,
-          semester: Number(course.semester),
-        });
+        const created = await api.resolvePlanningTerm(suggestedTerm);
 
         requestId = created.request_id;
         setPlanningRequest(created);
@@ -509,11 +507,10 @@ function App({ studentId, demoSwitchEnabled, onSwitchStudent, switchError }) {
 
   const currentYear =
     planningRequest?.academic_year ||
-    courses[0]?.academic_year ||
-    "—";
+    suggestedTerm.academic_year;
 
   const currentSemester =
-    planningRequest?.semester || courses[0]?.semester || "—";
+    planningRequest?.semester || suggestedTerm.semester;
 
   const studentName = student?.student_name || "Loading student";
 
@@ -602,9 +599,26 @@ function App({ studentId, demoSwitchEnabled, onSwitchStudent, switchError }) {
           </div>
 
           <div className="topbar-actions">
+          <fieldset className="planning-term-selector" disabled={loading || savingCourse || termSwitching}>
+            <legend>Planning Term</legend>
+            <label>Academic Year
+              <select aria-label="Planning academic year" value={currentYear}
+                onChange={event => switchTerm({ academic_year: event.target.value, semester: Number(currentSemester) })}>
+                {planningYears(courses, requests, { academic_year: currentYear }).map(year =>
+                  <option key={year} value={year}>AY{displayYear(year)}</option>)}
+              </select>
+            </label>
+            <label>Semester
+              <select aria-label="Planning semester" value={currentSemester}
+                onChange={event => switchTerm({ academic_year: currentYear, semester: Number(event.target.value) })}>
+                <option value="1">Semester 1</option><option value="2">Semester 2</option>
+                {Number(currentSemester) === 3 && <option value="3">Semester 3</option>}
+              </select>
+            </label>
+          </fieldset>
           {demoSwitchEnabled && <label className="demo-profile-selector">
             Active profile
-            <select aria-label="Active demo profile" value={studentId}
+            <select aria-label="Active demo profile" value={studentId} disabled={termSwitching || savingCourse}
               onChange={event => onSwitchStudent(event.target.value)}>
               <option value="DEMO001">DEMO001 — Information Engineering and Media</option>
               <option value="DEMO002">DEMO002 — Electrical and Electronic Engineering</option>
@@ -631,25 +645,28 @@ function App({ studentId, demoSwitchEnabled, onSwitchStudent, switchError }) {
 
         <main id="main">
           {switchError && <p role="alert" className="demo-switch-error">{switchError}</p>}
-          {page === "planner" ? (
-            <Planner
+          {termError && <p role="alert" className="demo-switch-error">{termError}</p>}
+          {termSwitching ? <p role="status">Loading planning term…</p> : page === "planner" ? (
+            <Planner key={planningRequest?.request_id || 'pending'}
               planningRequest={planningRequest}
               selectedCodes={selectedCodes}
               courses={courses}
               preferredPlanId={workingPlanId}
               onPlanChanged={(planId, codes) => {
+                if (requestScope.current !== planningRequest?.request_id) return;
+                rememberedPlans.current.set(planningRequest.request_id, planId);
                 refreshSelectionContext();
                 workingPlanRef.current = planId;
                 setWorkingPlanId(planId);
                 setSelectedCodes(codes);
               }}
               onBackToExplorer={() => setPage("explorer")}
-              onTargetAuUpdated={(updatedRequest) =>
-                setPlanningRequest(updatedRequest)
-              }
+              onTargetAuUpdated={(updatedRequest) => {
+                if (requestScope.current === updatedRequest.request_id) setPlanningRequest(updatedRequest);
+              }}
             />
           ) : page === "profile" ? (
-            <StudentProfile studentId={studentId} workingPlanId={workingPlanId}
+            <StudentProfile key={planningRequest?.request_id || "pending"} studentId={studentId} workingPlanId={workingPlanId}
               selectionRevision={selectionRevision} planningLoading={loading} planningError={error}
               onRetryPlanning={() => setLoadRevision(n => n + 1)} />
           ) : (
@@ -1157,7 +1174,8 @@ function App({ studentId, demoSwitchEnabled, onSwitchStudent, switchError }) {
       />
 
       {/* Smart STARS AI Assistant */}
-      <ChatWidget />
+      <ChatWidget planningRequestId={planningRequest?.request_id ?? null} workingPlanId={workingPlanId}
+        planningLoading={loading || termSwitching} />
     </div>
   );
 }

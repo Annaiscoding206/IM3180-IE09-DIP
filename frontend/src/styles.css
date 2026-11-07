@@ -81,6 +81,12 @@ nav { display: grid; gap: 8px; }
 .topbar i { color: #a1afc1; font-style: normal; }
 .topbar { flex-wrap: wrap; gap: 12px; }
 .topbar .topbar-actions { flex-wrap: wrap; }
+.planning-term-selector { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 4px 8px 6px; border: 1px solid var(--line); border-radius: 8px; }
+.planning-term-selector legend { color: var(--muted); font-size: 11px; }
+.planning-term-selector label { display: grid; gap: 4px; color: var(--muted); font-size: 11px; }
+.planning-term-selector select { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font: inherit; }
+.planning-term-selector select:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
+.planning-term-selector:disabled { opacity: .6; }
 .demo-profile-selector { display: grid; gap: 4px; color: var(--muted); font-size: 11px; }
 .demo-profile-selector select { max-width: min(290px, 70vw); padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; }
 .demo-profile-selector select:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }

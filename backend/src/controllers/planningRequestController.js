@@ -14,6 +14,7 @@ const handle = (action, status = 200) => async (req, res) => {
 };
 
 module.exports = {
+  resolvePlanningTerm: handle((req, res) => plans.resolveRequestTerm(res.locals.authenticatedStudentId, req.body || {})),
   getActivePlan: handle((req, res) => require("../services/planningSummaryService").getActivePlan(req.params.requestId, res.locals.authenticatedStudentId)),
   createPlanningRequest: handle((req) => plans.createRequest(req.body || {}), 201),
   listPlanningRequests: handle((req) => plans.listRequests(req.query.student_id)),

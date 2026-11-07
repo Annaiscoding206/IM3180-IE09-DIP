@@ -5,7 +5,8 @@ import { z } from "zod";
 // Retrieve verified course information from the existing backend.
 export async function loadCourseInformation(
   courseCode,
-  includeIndexes = false
+  includeIndexes = false,
+  planningTerm = null
 ) {
   const code = String(courseCode || "").trim().toUpperCase();
 
@@ -49,15 +50,18 @@ export async function loadCourseInformation(
   }
 
   const { indexes = [], ...courseDetails } = result.data;
+  const scopedIndexes = planningTerm ? indexes.filter(index => index.academic_year === planningTerm.academic_year &&
+    Number(index.semester) === Number(planningTerm.semester)) : indexes;
 
   return {
     status: "ok",
     course_code: code,
     data: {
       ...courseDetails,
-      index_count: indexes.length,
+      index_count: scopedIndexes.length,
+      ...(planningTerm ? { planning_term: planningTerm, available_for_planning_term: scopedIndexes.length > 0 } : {}),
 
-      ...(includeIndexes ? { indexes } : {})
+      ...(includeIndexes ? { indexes: scopedIndexes } : {})
     }
   };
 }
@@ -94,7 +98,7 @@ export const getCourseInformationTool = tool({
     )
   }),
 
-  async execute({ course_code, include_indexes }) {
+  async execute({ course_code, include_indexes }, runContext) {
     console.log(
       "[AI TOOL] get_course_information called:",
       course_code,
@@ -104,7 +108,8 @@ export const getCourseInformationTool = tool({
 
     const result = await loadCourseInformation(
       course_code,
-      include_indexes
+      include_indexes,
+      runContext?.context?.planningTerm ?? null
     );
 
     return JSON.stringify(result);

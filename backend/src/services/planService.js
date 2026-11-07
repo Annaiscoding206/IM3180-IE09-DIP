@@ -52,6 +52,31 @@ async function createRequest(body = {}) {
   );
   return getRequest(result.insertId);
 }
+
+// Term navigation never rewrites an existing request. Serialize selector calls
+// per student so concurrent tabs/StrictMode reuse the same request without DDL.
+async function resolveRequestTerm(studentId, body = {}) {
+  if (!studentId) throw new PlanningError(401, "Student identity required");
+  if (Object.keys(body).some(key => !['academic_year', 'semester'].includes(key))) {
+    throw new PlanningError(400, "Only academic_year and semester are accepted");
+  }
+  const year = body.academic_year;
+  if (typeof year !== 'string' || !/^\d{4}-\d{4}$/.test(year) ||
+      Number(year.slice(5)) !== Number(year.slice(0, 4)) + 1) {
+    throw new PlanningError(400, "academic_year must be consecutive years, for example 2026-2027");
+  }
+  const semester = integer(body.semester, "semester", 3);
+  return transaction(async db => {
+    const [students] = await db.query('SELECT student_id FROM student WHERE student_id = ? FOR UPDATE', [studentId]);
+    if (!students.length) throw new PlanningError(404, "Student not found");
+    const [existing] = await db.query(`SELECT request_id FROM planning_request
+      WHERE student_id = ? AND academic_year = ? AND semester = ?
+      ORDER BY updated_at DESC, request_id DESC LIMIT 1 FOR UPDATE`, [studentId, year, semester]);
+    if (existing.length) return getRequest(existing[0].request_id, db);
+    const [created] = await db.query('INSERT INTO planning_request (student_id, academic_year, semester) VALUES (?, ?, ?)', [studentId, year, semester]);
+    return getRequest(created.insertId, db);
+  });
+}
 async function updateTargetAu(requestId, authenticatedStudentId, body = {}) {
   const id = integer(requestId, "requestId");
   const studentId = text(authenticatedStudentId, "student_id", 15);
@@ -796,7 +821,7 @@ async function listPlanDetails(requestId) {
 }
 
 module.exports = {
-  PlanningError, createRequest, updateTargetAu, listRequests, getRequest, createPlan, listPlans,
+  PlanningError, createRequest, resolveRequestTerm, updateTargetAu, listRequests, getRequest, createPlan, listPlans,
   describePlan, getPlan, getPlanDetails, listPlanDetails, getIndexes, getClashes, previewIndex, putIndex, removeIndex, setIndexLock,
   getPlanEligibility, getPlanValidation, selectPlan,
   addCourseToRequest, removeCourseFromRequest,

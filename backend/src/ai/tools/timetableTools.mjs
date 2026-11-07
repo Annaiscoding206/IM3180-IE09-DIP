@@ -3,6 +3,7 @@ import { tool } from "@openai/agents";
 import { z } from "zod";
 import summaries from "../../services/planningSummaryService.js";
 import planService from "../../services/planService.js";
+import leo from "../../services/leoPlanningService.js";
 
 // Retrieve the student's selected timetable.
 // The student ID must come from trusted application context,
@@ -251,6 +252,17 @@ export const getStudentTimetableTool = tool({
     });
 
     const studentId = runContext?.context?.studentId;
+
+    try {
+      const scope = await leo.toolPlanningScope(runContext?.context || {}, {
+        requestId: request_id, planId: plan_id, academicYear: academic_year, semester
+      });
+      request_id = scope.requestId;
+      academic_year = scope.academicYear;
+      semester = scope.semester;
+      // Preserve selected/named timetable semantics; only an explicit plan ID
+      // chooses a draft timetable here, as before.
+    } catch (error) { return JSON.stringify(leo.failure(error)); }
 
     let result;
 

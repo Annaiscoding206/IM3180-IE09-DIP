@@ -175,11 +175,14 @@ export const checkCourseEligibilityTool = tool({
     const requestId =
       runContext?.context?.activeRequestId ?? null;
 
+    let scope;
+    try { scope = await leo.toolPlanningScope(runContext?.context || {}, { requestId, planId: plan_id }); }
+    catch (error) { return JSON.stringify(leo.failure(error)); }
     const result = await loadCourseEligibility(
       studentId,
       course_code,
-      requestId,
-      plan_id ?? null
+      scope.requestId,
+      scope.planId
     );
 
     return JSON.stringify(result);

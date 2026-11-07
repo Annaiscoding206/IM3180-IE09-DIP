@@ -13,6 +13,7 @@ const preferences = require("../controllers/preferenceController");
 const { planningIdentity } = require("../middleware/planningIdentity");
 const { requestOwner, studentScope } = require("../middleware/planningOwnership");
 router.use(planningIdentity);
+router.post('/resolve-term', require('../controllers/planningRequestController').resolvePlanningTerm);
 router.param("requestId", requestOwner);
 router.post("/:requestId/generate-plans", require("../controllers/generationController").generate);
 router.get("/:requestId/preferences", preferences.getPreferences);

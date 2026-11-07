@@ -18,7 +18,7 @@ const sendChatMessage = async (req, res) => {
     });
   }
 
-  const { message, conversationId = null } = req.body || {};
+  const { message, conversationId = null, request_id = null, plan_id = null } = req.body || {};
 
   // 1. Validate message.
   if (
@@ -94,6 +94,8 @@ const sendChatMessage = async (req, res) => {
       message,
       studentId,
       conversationId: effectiveConversationId,
+      requestId: request_id,
+      planId: plan_id,
       sourceChannel: "website"
     });
 
@@ -108,6 +110,9 @@ const sendChatMessage = async (req, res) => {
     return res.status(200).json(result);
 
   } catch (error) {
+    if (error instanceof require('../services/planningError').PlanningError) {
+      return res.status(error.status).json({ success: false, message: error.message, ...error.details });
+    }
 
     // Do not disclose whether another student
     // owns a requested conversation.

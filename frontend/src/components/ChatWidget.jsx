@@ -5,7 +5,7 @@ import "./ChatWidget.css";
 
 const MAX_MESSAGE_LENGTH = 2000;
 
-export default function ChatWidget() {
+export default function ChatWidget({ planningRequestId = null, workingPlanId = null, planningLoading = false }) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -17,6 +17,12 @@ export default function ChatWidget() {
   const messageIdRef = useRef(0);
   // Prevent history refreshes from overwriting a message being sent.
   const sendingRef = useRef(false);
+  const planningKey = `${planningRequestId}:${workingPlanId}:${planningLoading}`;
+  const planningKeyRef = useRef(planningKey);
+  planningKeyRef.current = planningKey;
+  useEffect(() => {
+    setInput(""); setError(""); setIsSending(false); sendingRef.current = false;
+  }, [planningKey]);
 
   // Scroll to the latest message when the panel is open.
   useEffect(() => {
@@ -109,14 +115,15 @@ export default function ChatWidget() {
         refreshOnFocus
       );
     };
-  }, [isOpen]);
+  }, [isOpen, planningKey]);
 
   const sendMessage = async (event) => {
     event.preventDefault();
 
     const message = input.trim();
 
-    if (!message || isSending) return;
+    if (!message || isSending || planningLoading) return;
+    const sentPlanningKey = planningKey;
 
     if (message.length > MAX_MESSAGE_LENGTH) {
       setError("Your message is too long.");
@@ -139,7 +146,8 @@ export default function ChatWidget() {
 
     try {
       // Call the existing Express Chat API.
-      const result = await api.askChat(message);
+      const result = await api.askChat(message, planningRequestId, workingPlanId);
+      if (planningKeyRef.current !== sentPlanningKey) return;
 
       if (
         !result?.success ||
@@ -158,12 +166,15 @@ export default function ChatWidget() {
         },
       ]);
     } catch (err) {
+      if (planningKeyRef.current !== sentPlanningKey) return;
       setError(
         err.message || "Unable to contact Le Assistant."
       );
     } finally {
-      sendingRef.current = false;
-      setIsSending(false);
+      if (planningKeyRef.current === sentPlanningKey) {
+        sendingRef.current = false;
+        setIsSending(false);
+      }
     }
   };
 
@@ -276,12 +287,12 @@ export default function ChatWidget() {
               placeholder="Ask about a course..."
               aria-label="Message to Leo Assistant"
               maxLength={MAX_MESSAGE_LENGTH}
-              disabled={isSending}
+              disabled={isSending || planningLoading}
             />
 
             <button
               type="submit"
-              disabled={isSending || !input.trim()}
+              disabled={isSending || planningLoading || !input.trim()}
               aria-label="Send message"
             >
               ➤
