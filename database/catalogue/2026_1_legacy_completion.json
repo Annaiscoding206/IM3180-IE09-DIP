@@ -1,0 +1,52 @@
+{
+  "academic_year": "2026-2027",
+  "semester": 1,
+  "source_semester": "2026_1",
+  "prepared_on": "2026-11-05",
+  "sources": {
+    "indexes": {
+      "url": "https://ntumods.com/data/api/indexes/2026_1.json",
+      "sha256": "210252ee98d1cdc3c2502fba77e001bd92367d619cee5c15abcf78ff4caabec6"
+    },
+    "modules": {
+      "url": "https://ntumods.com/data/api/modules.json",
+      "sha256": "fb583c36184201513a6ea5e7929fccc7bd5749020a8d2a6920076d411ce51b57"
+    }
+  },
+  "notes": [
+    "Only the missing IE4758/37545 offering is added. Existing catalogue, semesters, plans and academic records are preserved.",
+    "Title and AU verified in bulk modules; timetable copied from historical Semester 1 indexes. LETTER_GRADED and unspecified weeks 1-13 are user-confirmed.",
+    "Existing IE4758 course-level prerequisite, restriction, exclusion, exam and course-type metadata is retained for consistent backend behavior; no new rules or programme mappings are inferred."
+  ],
+  "courses": [
+    {
+      "course_code": "IE4758",
+      "course_name": "Information Security",
+      "au": 3,
+      "grading_type": "LETTER_GRADED",
+      "course_types": [
+        "MPE",
+        "BDE"
+      ],
+      "prerequisite_text": "IE1005 OR EE1005",
+      "restriction_text": "IEM(2019-2021)(Direct Entry)",
+      "mutually_exclusive_text": "IM3003",
+      "exam_datetime": "2026-11-26 09:00:00",
+      "indexes": {
+        "37545": [
+          {
+            "key": "37545",
+            "type": "LEC",
+            "group": "EPLE",
+            "day": 1,
+            "time": "1900-2150",
+            "venue": "TR+62",
+            "remarks": "Teaching Wk1-13",
+            "duration": 6,
+            "source_remarks": ""
+          }
+        ]
+      }
+    }
+  ]
+}

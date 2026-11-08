@@ -1,0 +1,17 @@
+{
+  "student_id": "DEMO001",
+  "description": "Synthetic prototype attempts plus explicitly supplied legacy earned AU. Legacy year, semester, grade and other historical fields remain unchanged.",
+  "legacy_earned_au": [
+    { "course_code": "IE2108", "earned_au": 3 },
+    { "course_code": "IE2110", "earned_au": 3 },
+    { "course_code": "MH1810", "earned_au": 3 }
+  ],
+  "records": [
+    { "source_key": "demo:foundations-1", "course_code": "DA1001", "course_title": "Demo Academic Foundations", "academic_year": "2024-2025", "semester": 1, "result": "PASSED", "grade": "B+", "earned_au": 3 },
+    { "source_key": "demo:foundations-2", "course_code": "DA1001", "course_title": "Demo Academic Foundations", "academic_year": "2025-2026", "semester": 1, "result": "PASSED", "grade": "A", "earned_au": 3 },
+    { "source_key": "demo:practice-1", "course_code": "DA1002", "course_title": "Demo Engineering Practice", "academic_year": "2024-2025", "semester": 2, "result": "FAILED", "grade": "F", "earned_au": 0 },
+    { "source_key": "demo:practice-2", "course_code": "DA1002", "course_title": "Demo Engineering Practice", "academic_year": "2025-2026", "semester": 2, "result": "PASSED", "grade": "B", "earned_au": 4 },
+    { "source_key": "demo:microprocessors-1", "course_code": "IE3102", "course_title": "Microprocessors", "academic_year": "2025-2026", "semester": 2, "result": "FAILED", "grade": "F", "earned_au": 0 },
+    { "source_key": "demo:web-in-progress", "course_code": "CS2024", "course_title": "Web Design & Technologies", "academic_year": "2026-2027", "semester": 1, "result": "IN_PROGRESS", "grade": null, "earned_au": 0 }
+  ]
+}

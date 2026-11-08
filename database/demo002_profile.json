@@ -1,0 +1,485 @@
+{
+  "student": {
+    "student_id": "DEMO002",
+    "student_name": "Demo EEE Student",
+    "programme": "EEE",
+    "study_year": 2,
+    "admission_year": 2025,
+    "admission_route": "NORMAL_ENTRY"
+  },
+  "student_id": "DEMO002",
+  "curriculum": {
+    "curriculum_key": "DEMO_EEE_2025_NORMAL_V1",
+    "title": "EEE 2025 Normal Entry — Partial Demo Curriculum",
+    "programme": "EEE",
+    "admission_year": 2025,
+    "admission_route": "NORMAL_ENTRY",
+    "is_demo": 1,
+    "description": "Synthetic academic history; partial Year 1–2 curriculum based on user-provided AY2025 non-direct-entry semester reference and official NTU corroboration. Not a full graduation audit. Omits service learning and Years 3–4. Recommended semesters are advisory, not offering or eligibility rules."
+  },
+  "provenance": {
+    "semester_reference": "User-provided AY2025 EEE Year 1 non-direct-entry curriculum transcription (2026-10-31); exact cohort schedule remains provisionally supported.",
+    "official_references": [
+      "https://www.ntu.edu.sg/eee/admissions/programmes/undergraduate-programmes/curriculum-(eee)",
+      "https://www.ntu.edu.sg/docs/librariesprovider44/undergraduate-programme/double-degree-in-engineering-and-economics/ay25-26/ay25-26-eeec_cgpa_econs.pdf?sfvrsn=f29dd982_1"
+    ],
+    "limitations": "Official public overview and related-programme documents corroborate modules but are not the exact AY2025 normal-entry semester schedule. No offerings, prerequisites, exemptions or minimum study years are inferred. BDE covers only two Year 1 3-AU requirements; not the full degree BDE total."
+  },
+  "categories": [
+    {
+      "category_code": "CORE",
+      "title": "Year 1–2 named core requirements",
+      "required_au": 48
+    },
+    {
+      "category_code": "ICC",
+      "title": "Year 1–2 named ICC requirements",
+      "required_au": 17
+    },
+    {
+      "category_code": "BDE",
+      "title": "Year 1 BDE requirements (choices not recorded)",
+      "required_au": 6
+    }
+  ],
+  "groups": [
+    {
+      "category_code": "ICC",
+      "group_code": "COMMON",
+      "title": "Common core",
+      "required_au": 14
+    },
+    {
+      "category_code": "ICC",
+      "group_code": "PROFESSIONAL",
+      "title": "Professional series (partial)",
+      "required_au": 3
+    }
+  ],
+  "courses": [
+    {
+      "course_code": "EG1001",
+      "course_title": "Engineers in Society",
+      "category_code": "CORE",
+      "group_code": null,
+      "is_required": 1,
+      "recommended_study_year": 1,
+      "recommended_semester": 1,
+      "verified_min_study_year": null,
+      "verification_source": null
+    },
+    {
+      "course_code": "FE1073",
+      "course_title": "An Introduction to Engineering & Practices",
+      "category_code": "CORE",
+      "group_code": null,
+      "is_required": 1,
+      "recommended_study_year": 1,
+      "recommended_semester": 1,
+      "verified_min_study_year": null,
+      "verification_source": null
+    },
+    {
+      "course_code": "IE1005",
+      "course_title": "From Computational Thinking to Programming",
+      "category_code": "CORE",
+      "group_code": null,
+      "is_required": 1,
+      "recommended_study_year": 1,
+      "recommended_semester": 1,
+      "verified_min_study_year": null,
+      "verification_source": null
+    },
+    {
+      "course_code": "MH1810",
+      "course_title": "Mathematics 1",
+      "category_code": "CORE",
+      "group_code": null,
+      "is_required": 1,
+      "recommended_study_year": 1,
+      "recommended_semester": 1,
+      "verified_min_study_year": null,
+      "verification_source": null
+    },
+    {
+      "course_code": "PH1011",
+      "course_title": "Physics",
+      "category_code": "CORE",
+      "group_code": null,
+      "is_required": 1,
+      "recommended_study_year": 1,
+      "recommended_semester": 1,
+      "verified_min_study_year": null,
+      "verification_source": null
+    },
+    {
+      "course_code": "CC0001",
+      "course_title": "Inquiry & Communication in an Interdisciplinary World",
+      "category_code": "ICC",
+      "group_code": "COMMON",
+      "is_required": 1,
+      "recommended_study_year": 1,
+      "recommended_semester": 1,
+      "verified_min_study_year": null,
+      "verification_source": null
+    },
+    {
+      "course_code": "EE1071",
+      "course_title": "EEE Laboratory 1",
+      "category_code": "CORE",
+      "group_code": null,
+      "is_required": 1,
+      "recommended_study_year": 1,
+      "recommended_semester": 2,
+      "verified_min_study_year": null,
+      "verification_source": null
+    },
+    {
+      "course_code": "EE1102",
+      "course_title": "Physics Foundation for Electrical & Electronic Engineering",
+      "category_code": "CORE",
+      "group_code": null,
+      "is_required": 1,
+      "recommended_study_year": 1,
+      "recommended_semester": 2,
+      "verified_min_study_year": null,
+      "verification_source": null
+    },
+    {
+      "course_code": "MH1811",
+      "course_title": "Mathematics 2",
+      "category_code": "CORE",
+      "group_code": null,
+      "is_required": 1,
+      "recommended_study_year": 1,
+      "recommended_semester": 2,
+      "verified_min_study_year": null,
+      "verification_source": null
+    },
+    {
+      "course_code": "CC0003",
+      "course_title": "Ethics & Civics in a Multicultural World",
+      "category_code": "ICC",
+      "group_code": "COMMON",
+      "is_required": 1,
+      "recommended_study_year": 1,
+      "recommended_semester": 2,
+      "verified_min_study_year": null,
+      "verification_source": null
+    },
+    {
+      "course_code": "CC0015",
+      "course_title": "Health & Wellbeing",
+      "category_code": "ICC",
+      "group_code": "COMMON",
+      "is_required": 1,
+      "recommended_study_year": 1,
+      "recommended_semester": 2,
+      "verified_min_study_year": null,
+      "verification_source": null
+    },
+    {
+      "course_code": "IE0005",
+      "course_title": "Introduction to Data Science & Artificial Intelligence",
+      "category_code": "ICC",
+      "group_code": "PROFESSIONAL",
+      "is_required": 1,
+      "recommended_study_year": 1,
+      "recommended_semester": 2,
+      "verified_min_study_year": null,
+      "verification_source": null
+    },
+    {
+      "course_code": "EE2101",
+      "course_title": "Circuit Analysis",
+      "category_code": "CORE",
+      "group_code": null,
+      "is_required": 1,
+      "recommended_study_year": 2,
+      "recommended_semester": 1,
+      "verified_min_study_year": null,
+      "verification_source": null
+    },
+    {
+      "course_code": "EE2103",
+      "course_title": "Semiconductor Fundamentals",
+      "category_code": "CORE",
+      "group_code": null,
+      "is_required": 1,
+      "recommended_study_year": 2,
+      "recommended_semester": 1,
+      "verified_min_study_year": null,
+      "verification_source": null
+    },
+    {
+      "course_code": "IE2104",
+      "course_title": "Digital Electronics",
+      "category_code": "CORE",
+      "group_code": null,
+      "is_required": 1,
+      "recommended_study_year": 2,
+      "recommended_semester": 1,
+      "verified_min_study_year": null,
+      "verification_source": null
+    },
+    {
+      "course_code": "IE2106",
+      "course_title": "Engineering Mathematics I",
+      "category_code": "CORE",
+      "group_code": null,
+      "is_required": 1,
+      "recommended_study_year": 2,
+      "recommended_semester": 1,
+      "verified_min_study_year": null,
+      "verification_source": null
+    },
+    {
+      "course_code": "ML0004",
+      "course_title": "Career Design & Workplace Readiness in the V.U.C.A. World",
+      "category_code": "ICC",
+      "group_code": "COMMON",
+      "is_required": 1,
+      "recommended_study_year": 2,
+      "recommended_semester": 1,
+      "verified_min_study_year": null,
+      "verification_source": null
+    },
+    {
+      "course_code": "CC0006",
+      "course_title": "Sustainability: Society, Economy & Environment",
+      "category_code": "ICC",
+      "group_code": "COMMON",
+      "is_required": 1,
+      "recommended_study_year": 2,
+      "recommended_semester": 1,
+      "verified_min_study_year": null,
+      "verification_source": null
+    },
+    {
+      "course_code": "EE2005",
+      "course_title": "Electrical Devices & Machines",
+      "category_code": "CORE",
+      "group_code": null,
+      "is_required": 1,
+      "recommended_study_year": 2,
+      "recommended_semester": 2,
+      "verified_min_study_year": null,
+      "verification_source": null
+    },
+    {
+      "course_code": "EE2073",
+      "course_title": "Introduction to EEE Design & Project",
+      "category_code": "CORE",
+      "group_code": null,
+      "is_required": 1,
+      "recommended_study_year": 2,
+      "recommended_semester": 2,
+      "verified_min_study_year": null,
+      "verification_source": null
+    },
+    {
+      "course_code": "EE2102",
+      "course_title": "Analog Electronics",
+      "category_code": "CORE",
+      "group_code": null,
+      "is_required": 1,
+      "recommended_study_year": 2,
+      "recommended_semester": 2,
+      "verified_min_study_year": null,
+      "verification_source": null
+    },
+    {
+      "course_code": "IE2107",
+      "course_title": "Engineering Mathematics II",
+      "category_code": "CORE",
+      "group_code": null,
+      "is_required": 1,
+      "recommended_study_year": 2,
+      "recommended_semester": 2,
+      "verified_min_study_year": null,
+      "verification_source": null
+    },
+    {
+      "course_code": "IE2108",
+      "course_title": "Data Structures & Algorithms in Python",
+      "category_code": "CORE",
+      "group_code": null,
+      "is_required": 1,
+      "recommended_study_year": 2,
+      "recommended_semester": 2,
+      "verified_min_study_year": null,
+      "verification_source": null
+    },
+    {
+      "course_code": "IE2110",
+      "course_title": "Signals & Systems",
+      "category_code": "CORE",
+      "group_code": null,
+      "is_required": 1,
+      "recommended_study_year": 2,
+      "recommended_semester": 2,
+      "verified_min_study_year": null,
+      "verification_source": null
+    },
+    {
+      "course_code": "CC0007",
+      "course_title": "Science & Technology for Humanity",
+      "category_code": "ICC",
+      "group_code": "COMMON",
+      "is_required": 1,
+      "recommended_study_year": 2,
+      "recommended_semester": 2,
+      "verified_min_study_year": null,
+      "verification_source": null
+    }
+  ],
+  "reference_au": {
+    "EG1001": 2,
+    "FE1073": 1,
+    "IE1005": 3,
+    "MH1810": 3,
+    "PH1011": 3,
+    "CC0001": 2,
+    "EE1071": 1,
+    "EE1102": 3,
+    "MH1811": 3,
+    "CC0003": 2,
+    "CC0015": 2,
+    "IE0005": 3,
+    "EE2101": 3,
+    "EE2103": 3,
+    "IE2104": 3,
+    "IE2106": 3,
+    "ML0004": 2,
+    "CC0006": 3,
+    "EE2005": 3,
+    "EE2073": 2,
+    "EE2102": 3,
+    "IE2107": 3,
+    "IE2108": 3,
+    "IE2110": 3,
+    "CC0007": 3
+  },
+  "records": [
+    {
+      "source_key": "demo:eee2025:y1:EG1001",
+      "course_code": "EG1001",
+      "course_title": "Engineers in Society",
+      "academic_year": "2025-2026",
+      "semester": 1,
+      "result": "PASSED",
+      "grade": null,
+      "earned_au": 2
+    },
+    {
+      "source_key": "demo:eee2025:y1:FE1073",
+      "course_code": "FE1073",
+      "course_title": "An Introduction to Engineering & Practices",
+      "academic_year": "2025-2026",
+      "semester": 1,
+      "result": "PASSED",
+      "grade": null,
+      "earned_au": 1
+    },
+    {
+      "source_key": "demo:eee2025:y1:IE1005",
+      "course_code": "IE1005",
+      "course_title": "From Computational Thinking to Programming",
+      "academic_year": "2025-2026",
+      "semester": 1,
+      "result": "PASSED",
+      "grade": null,
+      "earned_au": 3
+    },
+    {
+      "source_key": "demo:eee2025:y1:MH1810",
+      "course_code": "MH1810",
+      "course_title": "Mathematics 1",
+      "academic_year": "2025-2026",
+      "semester": 1,
+      "result": "PASSED",
+      "grade": null,
+      "earned_au": 3
+    },
+    {
+      "source_key": "demo:eee2025:y1:PH1011",
+      "course_code": "PH1011",
+      "course_title": "Physics",
+      "academic_year": "2025-2026",
+      "semester": 1,
+      "result": "PASSED",
+      "grade": null,
+      "earned_au": 3
+    },
+    {
+      "source_key": "demo:eee2025:y1:CC0001",
+      "course_code": "CC0001",
+      "course_title": "Inquiry & Communication in an Interdisciplinary World",
+      "academic_year": "2025-2026",
+      "semester": 1,
+      "result": "PASSED",
+      "grade": null,
+      "earned_au": 2
+    },
+    {
+      "source_key": "demo:eee2025:y1:EE1071",
+      "course_code": "EE1071",
+      "course_title": "EEE Laboratory 1",
+      "academic_year": "2025-2026",
+      "semester": 2,
+      "result": "PASSED",
+      "grade": null,
+      "earned_au": 1
+    },
+    {
+      "source_key": "demo:eee2025:y1:EE1102",
+      "course_code": "EE1102",
+      "course_title": "Physics Foundation for Electrical & Electronic Engineering",
+      "academic_year": "2025-2026",
+      "semester": 2,
+      "result": "PASSED",
+      "grade": null,
+      "earned_au": 3
+    },
+    {
+      "source_key": "demo:eee2025:y1:MH1811",
+      "course_code": "MH1811",
+      "course_title": "Mathematics 2",
+      "academic_year": "2025-2026",
+      "semester": 2,
+      "result": "PASSED",
+      "grade": null,
+      "earned_au": 3
+    },
+    {
+      "source_key": "demo:eee2025:y1:CC0003",
+      "course_code": "CC0003",
+      "course_title": "Ethics & Civics in a Multicultural World",
+      "academic_year": "2025-2026",
+      "semester": 2,
+      "result": "PASSED",
+      "grade": null,
+      "earned_au": 2
+    },
+    {
+      "source_key": "demo:eee2025:y1:CC0015",
+      "course_code": "CC0015",
+      "course_title": "Health & Wellbeing",
+      "academic_year": "2025-2026",
+      "semester": 2,
+      "result": "PASSED",
+      "grade": null,
+      "earned_au": 2
+    },
+    {
+      "source_key": "demo:eee2025:y1:IE0005",
+      "course_code": "IE0005",
+      "course_title": "Introduction to Data Science & Artificial Intelligence",
+      "academic_year": "2025-2026",
+      "semester": 2,
+      "result": "PASSED",
+      "grade": null,
+      "earned_au": 3
+    }
+  ]
+}

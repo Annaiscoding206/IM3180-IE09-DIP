@@ -1,0 +1,923 @@
+{
+  "academic_year": "2026-2027",
+  "semester": 1,
+  "source_semester": "2026_1",
+  "prepared_on": "2026-11-03",
+  "sources": {
+    "modules": {
+      "url": "https://ntumods.com/data/api/modules.json",
+      "sha256": "fb583c36184201513a6ea5e7929fccc7bd5749020a8d2a6920076d411ce51b57"
+    },
+    "indexes": {
+      "url": "https://ntumods.com/data/api/indexes/2026_1.json",
+      "sha256": "210252ee98d1cdc3c2502fba77e001bd92367d619cee5c15abcf78ff4caabec6"
+    }
+  },
+  "notes": [
+    "Uses the previously verified bulk module and historical semester datasets. EE2073 is excluded because PRJ slots are not supported by the existing schema.",
+    "Title and AU use the bulk module catalogue. Indexes, class types, times, days, venues and explicit weeks use only the matching semester dataset.",
+    "LETTER_GRADED and 1-13 for unspecified weeks are user-confirmed defaults, not claims about published source values. Supplemented slots retain the original source_remarks.",
+    "No programme mappings, prerequisite/exclusion/restriction rules or exam dates are inferred. Neither curriculum is modified."
+  ],
+  "user_confirmed_values": {
+    "grading_type": "LETTER_GRADED",
+    "unspecified_teaching_weeks": "1-13",
+    "scope": "Only EE2103, EE2005 and IE2107; preserve explicit source weeks."
+  },
+  "courses": [
+    {
+      "course_code": "EE2103",
+      "course_name": "Semiconductor Fundamentals",
+      "au": 3,
+      "grading_type": "LETTER_GRADED",
+      "course_types": [],
+      "prerequisite_text": null,
+      "restriction_text": null,
+      "mutually_exclusive_text": null,
+      "exam_datetime": null,
+      "module_source": {
+        "code": "EE2103",
+        "title": "Semiconductor Fundamentals",
+        "au": "3.0",
+        "faculty": "EEE",
+        "categories": [
+          "CORE"
+        ],
+        "latestYear": "2026",
+        "latestSemester": "2",
+        "isCurrentSemester": true
+      },
+      "indexes": {
+        "32151": [
+          {
+            "key": "32151",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 1,
+            "time": "1630-1820",
+            "venue": "LKC-LT",
+            "remarks": "Teaching Wk1-13",
+            "duration": 4,
+            "source_remarks": ""
+          },
+          {
+            "key": "32151",
+            "type": "TUT",
+            "group": "EE01",
+            "day": 1,
+            "time": "0930-1020",
+            "venue": "TR+62",
+            "remarks": "Teaching Wk1-13",
+            "duration": 2,
+            "source_remarks": ""
+          }
+        ],
+        "32152": [
+          {
+            "key": "32152",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 1,
+            "time": "1630-1820",
+            "venue": "LKC-LT",
+            "remarks": "Teaching Wk1-13",
+            "duration": 4,
+            "source_remarks": ""
+          },
+          {
+            "key": "32152",
+            "type": "TUT",
+            "group": "EE02",
+            "day": 1,
+            "time": "0930-1020",
+            "venue": "TR+61",
+            "remarks": "Teaching Wk1-13",
+            "duration": 2,
+            "source_remarks": ""
+          }
+        ],
+        "32153": [
+          {
+            "key": "32153",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 1,
+            "time": "1630-1820",
+            "venue": "LKC-LT",
+            "remarks": "Teaching Wk1-13",
+            "duration": 4,
+            "source_remarks": ""
+          },
+          {
+            "key": "32153",
+            "type": "TUT",
+            "group": "EE03",
+            "day": 1,
+            "time": "1330-1420",
+            "venue": "TR+62",
+            "remarks": "Teaching Wk1-13",
+            "duration": 2,
+            "source_remarks": ""
+          }
+        ],
+        "32154": [
+          {
+            "key": "32154",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 1,
+            "time": "1630-1820",
+            "venue": "LKC-LT",
+            "remarks": "Teaching Wk1-13",
+            "duration": 4,
+            "source_remarks": ""
+          },
+          {
+            "key": "32154",
+            "type": "TUT",
+            "group": "EE04",
+            "day": 1,
+            "time": "1330-1420",
+            "venue": "TR+63",
+            "remarks": "Teaching Wk1-13",
+            "duration": 2,
+            "source_remarks": ""
+          }
+        ],
+        "32155": [
+          {
+            "key": "32155",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 1,
+            "time": "1630-1820",
+            "venue": "LKC-LT",
+            "remarks": "Teaching Wk1-13",
+            "duration": 4,
+            "source_remarks": ""
+          },
+          {
+            "key": "32155",
+            "type": "TUT",
+            "group": "EE05",
+            "day": 2,
+            "time": "0930-1020",
+            "venue": "TR+63",
+            "remarks": "Teaching Wk1-13",
+            "duration": 2,
+            "source_remarks": ""
+          }
+        ],
+        "32156": [
+          {
+            "key": "32156",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 1,
+            "time": "1630-1820",
+            "venue": "LKC-LT",
+            "remarks": "Teaching Wk1-13",
+            "duration": 4,
+            "source_remarks": ""
+          },
+          {
+            "key": "32156",
+            "type": "TUT",
+            "group": "EE06",
+            "day": 2,
+            "time": "1130-1220",
+            "venue": "TR+63",
+            "remarks": "Teaching Wk1-13",
+            "duration": 2,
+            "source_remarks": ""
+          }
+        ],
+        "32157": [
+          {
+            "key": "32157",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 1,
+            "time": "1630-1820",
+            "venue": "LKC-LT",
+            "remarks": "Teaching Wk1-13",
+            "duration": 4,
+            "source_remarks": ""
+          },
+          {
+            "key": "32157",
+            "type": "TUT",
+            "group": "EE07",
+            "day": 2,
+            "time": "1330-1420",
+            "venue": "TR+62",
+            "remarks": "Teaching Wk1-13",
+            "duration": 2,
+            "source_remarks": ""
+          }
+        ],
+        "32158": [
+          {
+            "key": "32158",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 1,
+            "time": "1630-1820",
+            "venue": "LKC-LT",
+            "remarks": "Teaching Wk1-13",
+            "duration": 4,
+            "source_remarks": ""
+          },
+          {
+            "key": "32158",
+            "type": "TUT",
+            "group": "EE08",
+            "day": 2,
+            "time": "1330-1420",
+            "venue": "TR+63",
+            "remarks": "Teaching Wk1-13",
+            "duration": 2,
+            "source_remarks": ""
+          }
+        ],
+        "32159": [
+          {
+            "key": "32159",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 1,
+            "time": "1630-1820",
+            "venue": "LKC-LT",
+            "remarks": "Teaching Wk1-13",
+            "duration": 4,
+            "source_remarks": ""
+          },
+          {
+            "key": "32159",
+            "type": "TUT",
+            "group": "EE09",
+            "day": 2,
+            "time": "1530-1620",
+            "venue": "TR+63",
+            "remarks": "Teaching Wk1-13",
+            "duration": 2,
+            "source_remarks": ""
+          }
+        ],
+        "32160": [
+          {
+            "key": "32160",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 1,
+            "time": "1630-1820",
+            "venue": "LKC-LT",
+            "remarks": "Teaching Wk1-13",
+            "duration": 4,
+            "source_remarks": ""
+          },
+          {
+            "key": "32160",
+            "type": "TUT",
+            "group": "EE10",
+            "day": 3,
+            "time": "0930-1020",
+            "venue": "TR+64",
+            "remarks": "Teaching Wk1-13",
+            "duration": 2,
+            "source_remarks": ""
+          }
+        ],
+        "32161": [
+          {
+            "key": "32161",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 1,
+            "time": "1630-1820",
+            "venue": "LKC-LT",
+            "remarks": "Teaching Wk1-13",
+            "duration": 4,
+            "source_remarks": ""
+          },
+          {
+            "key": "32161",
+            "type": "TUT",
+            "group": "EE11",
+            "day": 3,
+            "time": "0930-1020",
+            "venue": "TR+62",
+            "remarks": "Teaching Wk1-13",
+            "duration": 2,
+            "source_remarks": ""
+          }
+        ],
+        "32162": [
+          {
+            "key": "32162",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 1,
+            "time": "1630-1820",
+            "venue": "LKC-LT",
+            "remarks": "Teaching Wk1-13",
+            "duration": 4,
+            "source_remarks": ""
+          },
+          {
+            "key": "32162",
+            "type": "TUT",
+            "group": "EE12",
+            "day": 3,
+            "time": "0930-1020",
+            "venue": "TR+63",
+            "remarks": "Teaching Wk1-13",
+            "duration": 2,
+            "source_remarks": ""
+          }
+        ],
+        "32163": [
+          {
+            "key": "32163",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 1,
+            "time": "1630-1820",
+            "venue": "LKC-LT",
+            "remarks": "Teaching Wk1-13",
+            "duration": 4,
+            "source_remarks": ""
+          },
+          {
+            "key": "32163",
+            "type": "TUT",
+            "group": "EE13",
+            "day": 3,
+            "time": "0930-1020",
+            "venue": "TR+77",
+            "remarks": "Teaching Wk1-13",
+            "duration": 2,
+            "source_remarks": ""
+          }
+        ],
+        "32164": [
+          {
+            "key": "32164",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 1,
+            "time": "1630-1820",
+            "venue": "LKC-LT",
+            "remarks": "Teaching Wk1-13",
+            "duration": 4,
+            "source_remarks": ""
+          },
+          {
+            "key": "32164",
+            "type": "TUT",
+            "group": "EE14",
+            "day": 3,
+            "time": "0930-1020",
+            "venue": "TR+61",
+            "remarks": "Teaching Wk1-13",
+            "duration": 2,
+            "source_remarks": ""
+          }
+        ],
+        "32165": [
+          {
+            "key": "32165",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 1,
+            "time": "1630-1820",
+            "venue": "LKC-LT",
+            "remarks": "Teaching Wk1-13",
+            "duration": 4,
+            "source_remarks": ""
+          },
+          {
+            "key": "32165",
+            "type": "TUT",
+            "group": "EE15",
+            "day": 4,
+            "time": "0930-1020",
+            "venue": "TR+64",
+            "remarks": "Teaching Wk1-13",
+            "duration": 2,
+            "source_remarks": ""
+          }
+        ],
+        "32166": [
+          {
+            "key": "32166",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 1,
+            "time": "1630-1820",
+            "venue": "LKC-LT",
+            "remarks": "Teaching Wk1-13",
+            "duration": 4,
+            "source_remarks": ""
+          },
+          {
+            "key": "32166",
+            "type": "TUT",
+            "group": "EE16",
+            "day": 4,
+            "time": "0930-1020",
+            "venue": "TR+68",
+            "remarks": "Teaching Wk1-13",
+            "duration": 2,
+            "source_remarks": ""
+          }
+        ],
+        "32167": [
+          {
+            "key": "32167",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 1,
+            "time": "1630-1820",
+            "venue": "LKC-LT",
+            "remarks": "Teaching Wk1-13",
+            "duration": 4,
+            "source_remarks": ""
+          },
+          {
+            "key": "32167",
+            "type": "TUT",
+            "group": "EE17",
+            "day": 4,
+            "time": "0930-1020",
+            "venue": "TR+69",
+            "remarks": "Teaching Wk1-13",
+            "duration": 2,
+            "source_remarks": ""
+          }
+        ],
+        "32168": [
+          {
+            "key": "32168",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 1,
+            "time": "1630-1820",
+            "venue": "LKC-LT",
+            "remarks": "Teaching Wk1-13",
+            "duration": 4,
+            "source_remarks": ""
+          },
+          {
+            "key": "32168",
+            "type": "TUT",
+            "group": "EE18",
+            "day": 4,
+            "time": "1330-1420",
+            "venue": "TR+63",
+            "remarks": "Teaching Wk1-13",
+            "duration": 2,
+            "source_remarks": ""
+          }
+        ],
+        "32169": [
+          {
+            "key": "32169",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 1,
+            "time": "1630-1820",
+            "venue": "LKC-LT",
+            "remarks": "Teaching Wk1-13",
+            "duration": 4,
+            "source_remarks": ""
+          },
+          {
+            "key": "32169",
+            "type": "TUT",
+            "group": "EE19",
+            "day": 5,
+            "time": "0930-1020",
+            "venue": "TR+67",
+            "remarks": "Teaching Wk1-13",
+            "duration": 2,
+            "source_remarks": ""
+          }
+        ],
+        "32171": [
+          {
+            "key": "32171",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 1,
+            "time": "1630-1820",
+            "venue": "LKC-LT",
+            "remarks": "Teaching Wk1-13",
+            "duration": 4,
+            "source_remarks": ""
+          },
+          {
+            "key": "32171",
+            "type": "TUT",
+            "group": "EE20",
+            "day": 5,
+            "time": "1330-1420",
+            "venue": "TR+67",
+            "remarks": "Teaching Wk1-13",
+            "duration": 2,
+            "source_remarks": ""
+          }
+        ]
+      }
+    },
+    {
+      "course_code": "EE2005",
+      "course_name": "Electrical Devices & Machines",
+      "au": 3,
+      "grading_type": "LETTER_GRADED",
+      "course_types": [],
+      "prerequisite_text": null,
+      "restriction_text": null,
+      "mutually_exclusive_text": null,
+      "exam_datetime": null,
+      "module_source": {
+        "code": "EE2005",
+        "title": "Electrical Devices & Machines",
+        "au": "3.0",
+        "faculty": "EEE",
+        "categories": [
+          "CORE"
+        ],
+        "latestYear": "2026",
+        "latestSemester": "2",
+        "isCurrentSemester": true
+      },
+      "indexes": {
+        "32301": [
+          {
+            "key": "32301",
+            "type": "TUT",
+            "group": "EE01",
+            "day": 2,
+            "time": "1330-1450",
+            "venue": "TR120",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ],
+        "32302": [
+          {
+            "key": "32302",
+            "type": "TUT",
+            "group": "EE02",
+            "day": 3,
+            "time": "0930-1050",
+            "venue": "TR121",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ],
+        "32303": [
+          {
+            "key": "32303",
+            "type": "TUT",
+            "group": "EE03",
+            "day": 4,
+            "time": "1330-1450",
+            "venue": "TR120",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ],
+        "32304": [
+          {
+            "key": "32304",
+            "type": "TUT",
+            "group": "EE04",
+            "day": 5,
+            "time": "0930-1050",
+            "venue": "TR120",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ],
+        "37504": [
+          {
+            "key": "37504",
+            "type": "TUT",
+            "group": "EPT1",
+            "day": 3,
+            "time": "1900-2020",
+            "venue": "TR+62",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          },
+          {
+            "key": "37504",
+            "type": "LAB",
+            "group": "EPL1",
+            "day": 4,
+            "time": "1900-2150",
+            "venue": "S2-B5C-07",
+            "remarks": "Teaching Wk6,12",
+            "duration": 6
+          }
+        ],
+        "37505": [
+          {
+            "key": "37505",
+            "type": "TUT",
+            "group": "EPT2",
+            "day": 3,
+            "time": "1900-2020",
+            "venue": "TR+64",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          },
+          {
+            "key": "37505",
+            "type": "LAB",
+            "group": "EPL2",
+            "day": 4,
+            "time": "1900-2150",
+            "venue": "S2-B5C-07",
+            "remarks": "Teaching Wk7,13",
+            "duration": 6
+          }
+        ],
+        "37506": [
+          {
+            "key": "37506",
+            "type": "TUT",
+            "group": "EPT3",
+            "day": 3,
+            "time": "2030-2150",
+            "venue": "TR+63",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          },
+          {
+            "key": "37506",
+            "type": "LAB",
+            "group": "EPL3",
+            "day": 5,
+            "time": "1900-2150",
+            "venue": "S2-B5C-07",
+            "remarks": "Teaching Wk7,13",
+            "duration": 6
+          }
+        ]
+      }
+    },
+    {
+      "course_code": "IE2107",
+      "course_name": "Engineering Mathematics II",
+      "au": 3,
+      "grading_type": "LETTER_GRADED",
+      "course_types": [],
+      "prerequisite_text": null,
+      "restriction_text": null,
+      "mutually_exclusive_text": null,
+      "exam_datetime": null,
+      "module_source": {
+        "code": "IE2107",
+        "title": "Engineering Mathematics II",
+        "au": "3.0",
+        "faculty": "EEE",
+        "categories": [
+          "CORE",
+          "GLOAD"
+        ],
+        "latestYear": "2026",
+        "latestSemester": "2",
+        "isCurrentSemester": true,
+        "notAvailableToProgramme": "ACBS, ACC, ACDA, ADM, ADMC, AERO, AISC, ARED, ASEC, BACF, BASA, BCE, BCG, BEEC, BIE, BMS, BS, BSB, BSPY, BUS, BUSD, BUSS, CBE, CBEC, CE, CEE, CEEC, CHEM, CHIN, CMED, CNEL, CNLM, COMP, CS, CSC, CSEC, CVEC, DSAI, ECDS, ECMA, ECON, ECPP, ECPS, EESS, ELAH, ELH, ELHS, ELPL, ENE, ENEC, ENG, ESPP, HIST, HSCN, HSLM, LMEL, LMPL, LMS, MACS, MAEC, MAEO, MATH, ME(DES), ME(IDMS), ME(IMS), ME(NULL), ME(RMS), MEEC(DES), MEEC(IDMS), MEEC(IMS), MEEC(NULL), MEEC(RMS), MS, MS-2ndMaj/Spec(MSB), PESC, PHIL, PHMS, PHY, PLCN, PLHS, PPGA, PSLM, PSMA, PSY, REP, ROBO, SCED, SOC, SPPE, SSM"
+      },
+      "indexes": {
+        "32371": [
+          {
+            "key": "32371",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 3,
+            "time": "1630-1750",
+            "venue": "LT22",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          },
+          {
+            "key": "32371",
+            "type": "TUT",
+            "group": "EE01",
+            "day": 1,
+            "time": "1430-1550",
+            "venue": "TR102",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ],
+        "32372": [
+          {
+            "key": "32372",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 3,
+            "time": "1630-1750",
+            "venue": "LT22",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          },
+          {
+            "key": "32372",
+            "type": "TUT",
+            "group": "EE02",
+            "day": 2,
+            "time": "0930-1050",
+            "venue": "TR103",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ],
+        "32373": [
+          {
+            "key": "32373",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 3,
+            "time": "1630-1750",
+            "venue": "LT22",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          },
+          {
+            "key": "32373",
+            "type": "TUT",
+            "group": "EE03",
+            "day": 2,
+            "time": "0930-1050",
+            "venue": "TR+61",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ],
+        "32374": [
+          {
+            "key": "32374",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 3,
+            "time": "1630-1750",
+            "venue": "LT22",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          },
+          {
+            "key": "32374",
+            "type": "TUT",
+            "group": "EE04",
+            "day": 2,
+            "time": "1330-1450",
+            "venue": "TR+69",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ],
+        "32375": [
+          {
+            "key": "32375",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 3,
+            "time": "1630-1750",
+            "venue": "LT22",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          },
+          {
+            "key": "32375",
+            "type": "TUT",
+            "group": "EE05",
+            "day": 3,
+            "time": "0930-1050",
+            "venue": "TR+65",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ],
+        "32376": [
+          {
+            "key": "32376",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 3,
+            "time": "1630-1750",
+            "venue": "LT22",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          },
+          {
+            "key": "32376",
+            "type": "TUT",
+            "group": "EE06",
+            "day": 3,
+            "time": "1430-1550",
+            "venue": "TR+78",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ],
+        "32377": [
+          {
+            "key": "32377",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 3,
+            "time": "1630-1750",
+            "venue": "LT22",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          },
+          {
+            "key": "32377",
+            "type": "TUT",
+            "group": "EE07",
+            "day": 4,
+            "time": "1030-1150",
+            "venue": "TR+78",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ],
+        "32378": [
+          {
+            "key": "32378",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 3,
+            "time": "1630-1750",
+            "venue": "LT22",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          },
+          {
+            "key": "32378",
+            "type": "TUT",
+            "group": "EE08",
+            "day": 4,
+            "time": "1430-1550",
+            "venue": "TR+61",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ],
+        "32379": [
+          {
+            "key": "32379",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 3,
+            "time": "1630-1750",
+            "venue": "LT22",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          },
+          {
+            "key": "32379",
+            "type": "TUT",
+            "group": "EE09",
+            "day": 4,
+            "time": "1430-1550",
+            "venue": "TR+65",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ]
+      }
+    }
+  ]
+}

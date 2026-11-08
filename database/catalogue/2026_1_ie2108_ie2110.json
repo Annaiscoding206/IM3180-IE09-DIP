@@ -1,0 +1,492 @@
+{
+  "academic_year": "2026-2027",
+  "semester": 1,
+  "source_semester": "2026_1",
+  "retrieved_on": "2026-10-30",
+  "sources": {
+    "indexes": {
+      "url": "https://ntumods.com/data/api/indexes/2026_1.json",
+      "sha256": "210252ee98d1cdc3c2502fba77e001bd92367d619cee5c15abcf78ff4caabec6"
+    },
+    "exams": {
+      "url": "https://ntumods.com/data/api/exams/2026_1.json",
+      "sha256": "8346e195f55b4a764709e8846527a22543b1f50b70c6ae3bf8e6c86665a80db2"
+    },
+    "IE2108": {
+      "url": "https://ntumods.com/mods/IE2108/2026/1",
+      "sha256": "e4978593d9a48d5c3ed8e78e3522226ae9330dd5e90604f315286642e762f73c"
+    },
+    "IE2110": {
+      "url": "https://ntumods.com/mods/IE2110/2026/1",
+      "sha256": "04b966db72692180fb4730c8a84451b75448448b7d387c7b23094561f1dec8c8"
+    }
+  },
+  "notes": [
+    "Historical module-page metadata only; /api/modules/{code} describes the latest offering and is not used.",
+    "The project owner confirmed 1-13 for all 33 previously unspecified teaching-week values. Original blank remarks are retained in source_remarks; these are user-confirmed supplements, not published NTUMods week ranges.",
+    "CORE is a catalogue label, not an official programme/cohort curriculum mapping.",
+    "Grading type for IE2108 and IE2110 is LETTER_GRADED, explicitly confirmed by the project owner after the initial import; this is supplementary to the historical pages. Vacancies remain unpublished/null. Raw restrictions/exclusions are display metadata only; no structured eligibility rules are added."
+  ],
+  "courses": [
+    {
+      "course_code": "IE2108",
+      "course_name": "Data Structures & Algorithms in Python",
+      "au": 3,
+      "grading_type": "LETTER_GRADED",
+      "course_types": [
+        "CORE"
+      ],
+      "prerequisite_text": null,
+      "restriction_text": "Not Available To Programme: REP(ASEN), REP(BIE), REP(CBE), REP(CE), REP(CSC), REP(CVEN), REP(ENE), REP(MAT), REP(ME)",
+      "mutually_exclusive_text": "SC5001",
+      "exam_datetime": "2026-12-02 13:00:00",
+      "exam_source": {
+        "date": "2 December 2026",
+        "day": 3,
+        "start_time": "1.00 pm",
+        "end_time": "3.00 pm",
+        "key": "IE2108",
+        "name": "DATA STRUCTURES & ALGORITHMS IN PYTHON",
+        "duration": 4
+      },
+      "indexes": {
+        "32261": [
+          {
+            "key": "32261",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 1,
+            "time": "0930-1050",
+            "venue": "LT24",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          },
+          {
+            "key": "32261",
+            "type": "TUT",
+            "group": "EE01",
+            "day": 1,
+            "time": "1330-1450",
+            "venue": "TR+78",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ],
+        "32262": [
+          {
+            "key": "32262",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 1,
+            "time": "0930-1050",
+            "venue": "LT24",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          },
+          {
+            "key": "32262",
+            "type": "TUT",
+            "group": "EE02",
+            "day": 2,
+            "time": "1030-1150",
+            "venue": "TR+69",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ],
+        "32263": [
+          {
+            "key": "32263",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 1,
+            "time": "0930-1050",
+            "venue": "LT24",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          },
+          {
+            "key": "32263",
+            "type": "TUT",
+            "group": "EE03",
+            "day": 2,
+            "time": "1430-1550",
+            "venue": "TR+90",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ],
+        "32264": [
+          {
+            "key": "32264",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 1,
+            "time": "0930-1050",
+            "venue": "LT24",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          },
+          {
+            "key": "32264",
+            "type": "TUT",
+            "group": "EE04",
+            "day": 3,
+            "time": "0930-1050",
+            "venue": "TR+66",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ],
+        "32265": [
+          {
+            "key": "32265",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 1,
+            "time": "0930-1050",
+            "venue": "LT24",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          },
+          {
+            "key": "32265",
+            "type": "TUT",
+            "group": "EE05",
+            "day": 3,
+            "time": "1030-1150",
+            "venue": "TR+64",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ],
+        "32266": [
+          {
+            "key": "32266",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 1,
+            "time": "0930-1050",
+            "venue": "LT24",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          },
+          {
+            "key": "32266",
+            "type": "TUT",
+            "group": "EE06",
+            "day": 4,
+            "time": "1030-1150",
+            "venue": "TR+61",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ],
+        "32267": [
+          {
+            "key": "32267",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 1,
+            "time": "0930-1050",
+            "venue": "LT24",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          },
+          {
+            "key": "32267",
+            "type": "TUT",
+            "group": "EE07",
+            "day": 4,
+            "time": "1430-1550",
+            "venue": "TR+64",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ],
+        "32268": [
+          {
+            "key": "32268",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 1,
+            "time": "0930-1050",
+            "venue": "LT24",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          },
+          {
+            "key": "32268",
+            "type": "TUT",
+            "group": "EE08",
+            "day": 5,
+            "time": "1430-1550",
+            "venue": "TR+61",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ],
+        "32269": [
+          {
+            "key": "32269",
+            "type": "LEC",
+            "group": "EELE",
+            "day": 1,
+            "time": "0930-1050",
+            "venue": "LT24",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          },
+          {
+            "key": "32269",
+            "type": "TUT",
+            "group": "EE09",
+            "day": 5,
+            "time": "1630-1750",
+            "venue": "TR+61",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ],
+        "37527": [
+          {
+            "key": "37527",
+            "type": "LEC",
+            "group": "EPLE",
+            "day": 2,
+            "time": "1900-2020",
+            "venue": "LT22",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          },
+          {
+            "key": "37527",
+            "type": "TUT",
+            "group": "EPT1",
+            "day": 2,
+            "time": "2030-2150",
+            "venue": "TR+63",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ],
+        "37528": [
+          {
+            "key": "37528",
+            "type": "LEC",
+            "group": "EPLE",
+            "day": 2,
+            "time": "1900-2020",
+            "venue": "LT22",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          },
+          {
+            "key": "37528",
+            "type": "TUT",
+            "group": "EPT2",
+            "day": 2,
+            "time": "2030-2150",
+            "venue": "TR+62",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ]
+      }
+    },
+    {
+      "course_code": "IE2110",
+      "course_name": "Signals & Systems",
+      "au": 3,
+      "grading_type": "LETTER_GRADED",
+      "course_types": [
+        "CORE"
+      ],
+      "prerequisite_text": null,
+      "restriction_text": null,
+      "mutually_exclusive_text": null,
+      "exam_datetime": "2026-11-24 13:00:00",
+      "exam_source": {
+        "date": "24 November 2026",
+        "day": 2,
+        "start_time": "1.00 pm",
+        "end_time": "3.00 pm",
+        "key": "IE2110",
+        "name": "SIGNALS & SYSTEMS",
+        "duration": 4
+      },
+      "indexes": {
+        "32391": [
+          {
+            "key": "32391",
+            "type": "TUT",
+            "group": "EE01",
+            "day": 1,
+            "time": "1130-1250",
+            "venue": "TR+92",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ],
+        "32392": [
+          {
+            "key": "32392",
+            "type": "TUT",
+            "group": "EE02",
+            "day": 2,
+            "time": "0930-1050",
+            "venue": "TR+92",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ],
+        "32393": [
+          {
+            "key": "32393",
+            "type": "TUT",
+            "group": "EE03",
+            "day": 2,
+            "time": "1330-1450",
+            "venue": "TR+93",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ],
+        "32394": [
+          {
+            "key": "32394",
+            "type": "TUT",
+            "group": "EE04",
+            "day": 3,
+            "time": "0930-1050",
+            "venue": "TR+92",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ],
+        "32395": [
+          {
+            "key": "32395",
+            "type": "TUT",
+            "group": "EE05",
+            "day": 3,
+            "time": "1430-1550",
+            "venue": "TR+91",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ],
+        "32396": [
+          {
+            "key": "32396",
+            "type": "TUT",
+            "group": "EE06",
+            "day": 4,
+            "time": "1030-1150",
+            "venue": "TR+91",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ],
+        "32397": [
+          {
+            "key": "32397",
+            "type": "TUT",
+            "group": "EE07",
+            "day": 4,
+            "time": "1030-1150",
+            "venue": "TR+92",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ],
+        "32398": [
+          {
+            "key": "32398",
+            "type": "TUT",
+            "group": "EE08",
+            "day": 4,
+            "time": "1430-1550",
+            "venue": "TR+93",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ],
+        "32399": [
+          {
+            "key": "32399",
+            "type": "TUT",
+            "group": "EE09",
+            "day": 4,
+            "time": "1430-1550",
+            "venue": "TR+92",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ],
+        "32400": [
+          {
+            "key": "32400",
+            "type": "TUT",
+            "group": "EE10",
+            "day": 5,
+            "time": "0930-1050",
+            "venue": "TR+92",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ],
+        "32401": [
+          {
+            "key": "32401",
+            "type": "TUT",
+            "group": "EE11",
+            "day": 5,
+            "time": "1430-1550",
+            "venue": "TR+95",
+            "remarks": "Teaching Wk1-13",
+            "duration": 3,
+            "source_remarks": ""
+          }
+        ]
+      }
+    }
+  ],
+  "user_confirmed_values": {
+    "grading_type": "LETTER_GRADED",
+    "unspecified_teaching_weeks": "1-13",
+    "scope": "IE2108 and IE2110; preserve explicit source week values."
+  }
+}
