@@ -93,7 +93,7 @@ function validateFilters(query) {
 const getCourses = async (req, res) => {
   try {
     validateFilters(req.query);
-    const { 
+    const {
   search,
   au,
   semester,
@@ -343,7 +343,7 @@ const getIndexTimetable = async (req, res) => {
 
         const [rows] = await pool.query(
             `
-            SELECT 
+            SELECT
                 slot_id,
                 course_code,
                 index_no,

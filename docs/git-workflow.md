@@ -147,4 +147,3 @@ Use clear commit messages, for example:
 \- node\_modules/
 
 \- generated build files
-

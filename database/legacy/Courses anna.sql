@@ -4,33 +4,33 @@ CREATE TABLE course_info (
          course_code VARCHAR(10) NOT NULL,
          index_no INT NOT NULL,
          course_name VARCHAR(255) NOT NULL,
-     
+
          au INT NOT NULL,
          vacancy INT NOT NULL DEFAULT 0,
-     
+
          prerequisite TEXT NULL,
          exemptions TEXT NULL,
-     
+
          grading_type ENUM('LETTER_GRADED', 'PASS_FAIL') NOT NULL,
-     
+
          exam_datetime DATETIME NULL,
-     
+
          bde BOOLEAN NOT NULL DEFAULT FALSE,
          gepe BOOLEAN NOT NULL DEFAULT FALSE,
-     
+
          academic_year VARCHAR(20) NOT NULL,
          semester INT NOT NULL,
-     
+
          mutually_exclusive_with TEXT NULL,
-     
+
          PRIMARY KEY (course_code, index_no)
      );
 CREATE TABLE class_slots (
          slot_id INT AUTO_INCREMENT PRIMARY KEY,
-     
+
          course_code VARCHAR(10) NOT NULL,
          index_no INT NOT NULL,
-     
+
          class_type ENUM(
              'LECTURE',
              'TUTORIAL',
@@ -38,9 +38,9 @@ CREATE TABLE class_slots (
              'SEMINAR',
              'STUDIO'
          ) NOT NULL,
-     
+
          class_group VARCHAR(20) NULL,
-     
+
          day_of_week ENUM(
              'MON',
              'TUE',
@@ -50,12 +50,12 @@ CREATE TABLE class_slots (
              'SAT',
              'SUN'
          ) NOT NULL,
-     
+
          start_time TIME NOT NULL,
          end_time TIME NOT NULL,
-     
+
          venue VARCHAR(100) NULL,
-     
+
          FOREIGN KEY (course_code, index_no)
              REFERENCES course_info(course_code, index_no)
              ON DELETE CASCADE
@@ -252,7 +252,7 @@ INSERT INTO course_info (
      )
      VALUES
      (
-         'IE3014', 32421, 'Digital Signal Processing', 3, 0, 'EE2010 OR IM2004 OR IE2010 OR IE2110', NULL, 
+         'IE3014', 32421, 'Digital Signal Processing', 3, 0, 'EE2010 OR IM2004 OR IE2010 OR IE2110', NULL,
          'LETTER_GRADED', '2026-12-03 09:00:00', TRUE, FALSE, '2026-2027', 1, 'CE3007' ),
      (
          'IE3014', 32422, 'Digital Signal Processing', 3, 0, 'EE2010 OR IM2004 OR IE2010 OR IE2110', NULL,
