@@ -52,7 +52,7 @@ test('the same StudentProfile renders DEMO001 and DEMO002 through identity-speci
     for (const value of [id, fixture.student.programme, String(fixture.student.admission_year)]) assert.ok(personal.textContent.includes(value));
     const fields = Object.fromEntries([...personal.querySelectorAll('.profile-fields > div')].map(row => [row.querySelector('dt').textContent, row.querySelector('dd').textContent]));
     assert.equal(fields['Study year'], String(fixture.student.study_year));
-    assert.equal(fields['Admission route'], id === 'DEMO002' ? 'NORMAL_ENTRY' : 'Direct Entry');
+    assert.equal(fields['Admission route'], id === 'DEMO002' ? 'Normal Entry' : 'Direct Entry');
     const audit = document.querySelector('[aria-labelledby="profile-audit-title"]');
     const metrics = Object.fromEntries([...audit.querySelectorAll('.profile-metrics > div')].map(row => [row.querySelector('dt').textContent, row.querySelector('dd').textContent]));
     assert.equal(metrics['Recorded AU'], String(fixture.earned));

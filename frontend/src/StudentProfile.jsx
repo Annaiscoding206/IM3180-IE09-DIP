@@ -3,6 +3,14 @@ import { api } from "./api";
 import { createLatestRequest } from "./planningContext";
 import "./student-profile.css";
 
+const formatAdmissionRoute = (route) => {
+  const labels = {
+    NORMAL_ENTRY: "Normal Entry",
+    DIRECT_ENTRY: "Direct Entry",
+  };
+
+  return labels[route] ?? route;
+};
 const value = input => input === null || input === undefined || input === "" ? "Not recorded" : input;
 const decision = input => input === true ? "Yes" : input === false ? "No" : "Unknown";
 const codes = input => input?.length ? input.join(", ") : "None";
@@ -70,7 +78,7 @@ function PersonalInformation({ student }) {
       {[["Student name", student.student_name], ["Student ID", student.student_id],
         ["Programme", student.programme], ["Study year", student.study_year],
         ["Admission year / cohort", student.admission_year],
-        ["Admission route", student.admission_route === "DIRECT_ENTRY" ? "Direct Entry" : student.admission_route]]
+        ["Admission route", formatAdmissionRoute(student.admission_route)]]
         .map(([label, content]) => <div key={label}><dt>{label}</dt><dd>{value(content)}</dd></div>)}
     </dl>
   </div>;
@@ -146,13 +154,7 @@ function Curriculum({ data }) {
       <div><dt>Admission year</dt><dd>{value(data.matching?.admission_year)}</dd></div>
       <div>
         <dt>Admission route</dt>
-        <dd>
-          {value(
-            data.matching?.admission_route === "DIRECT_ENTRY"
-              ? "Direct Entry"
-              : data.matching?.admission_route
-          )}
-        </dd>
+        <dd>{value(formatAdmissionRoute(data.matching?.admission_route))}</dd>
       </div>
     </dl>
     <h3>Overall requirements</h3><Progress progress={data.summary} />
